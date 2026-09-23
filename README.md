@@ -47,13 +47,23 @@ make bundle
 open dist/Snipzy.app
 ```
 
-`make test` requires full Xcode or developer tools containing XCTest. Current
-Command Line Tools installation can build Snipzy but does not ship XCTest.
+`make test` uses Swift Testing, which ships with Command Line Tools; the Makefile
+adds the Command Line Tools framework search path that SwiftPM omits, so run
+`make test` rather than bare `swift test` when Xcode is not installed.
 
 `make bundle` builds a release executable and creates `dist/Snipzy.app` without
 changing `Resources/Info.plist`. The bundler resolves paths from its own
 location, so it can run from any working directory. Override `APP_PATH` or
 `DIST_DIR` when a different output location is needed.
+
+## OCR
+
+Press `O` or click the eye button in the editor. Drag a rectangle to read that
+region, or click without dragging to read the whole image. Recognition runs
+on-device with Apple Vision (automatic language detection) and needs no extra
+permission. Results appear in an editable popover; text reaches the clipboard
+only when you click Copy Text. The dashed selection is never included in copied
+or saved images. Small or low-resolution text may read poorly.
 
 ## Manual Tests
 
@@ -68,6 +78,12 @@ Run these on a real macOS desktop:
 7. Cancel selection and verify app remains usable; missing permission should show an error.
 8. Choose `Quit Snipzy` and confirm menu bar item exits.
 9. Inspect bundle metadata with `plutil -p dist/Snipzy.app/Contents/Info.plist`.
+10. Capture text, press `O`, drag over a paragraph, and confirm the popover shows text.
+11. Confirm clipboard still holds the image until `Copy Text`, then paste into TextEdit.
+12. Click without dragging and confirm the whole image is read.
+13. Close the popover and confirm the dashed rectangle is cleared.
+14. Undo after OCR and confirm only real annotations are removed.
+15. Copy or save a PNG and confirm it has no dashed rectangle.
 
 ## Current Limits
 
