@@ -1,57 +1,62 @@
 import AppKit
-import XCTest
+import Testing
 @testable import Snipzy
 
 @MainActor
-final class EditorTests: XCTestCase {
-    func testAnnotationHistorySupportsUndoAndRedo() {
+@Suite
+struct EditorTests {
+    @Test
+    func annotationHistorySupportsUndoAndRedo() {
         let canvas = EditorCanvas(image: testImage())
         canvas.addText("hello", at: CGPoint(x: 0.25, y: 0.25))
 
-        XCTAssertEqual(canvas.annotations.count, 1)
-        XCTAssertEqual(canvas.annotations[0].tool.rawValue, AnnotationTool.text.rawValue)
-        XCTAssertEqual(canvas.annotations[0].text, "hello")
+        #expect(canvas.annotations.count == 1)
+        #expect(canvas.annotations[0].tool.rawValue == AnnotationTool.text.rawValue)
+        #expect(canvas.annotations[0].text == "hello")
 
         canvas.undo()
-        XCTAssertTrue(canvas.annotations.isEmpty)
+        #expect(canvas.annotations.isEmpty)
 
         canvas.redo()
-        XCTAssertEqual(canvas.annotations.count, 1)
-        XCTAssertEqual(canvas.annotations[0].text, "hello")
+        #expect(canvas.annotations.count == 1)
+        #expect(canvas.annotations[0].text == "hello")
     }
 
-    func testEmptyTextDoesNotCreateAnnotationOrHistoryEntry() {
+    @Test
+    func emptyTextDoesNotCreateAnnotationOrHistoryEntry() {
         let canvas = EditorCanvas(image: testImage())
         canvas.addText("", at: CGPoint(x: 0.5, y: 0.5))
 
-        XCTAssertTrue(canvas.annotations.isEmpty)
+        #expect(canvas.annotations.isEmpty)
         canvas.undo()
-        XCTAssertTrue(canvas.annotations.isEmpty)
+        #expect(canvas.annotations.isEmpty)
     }
 
-    func testRendererProducesPNGBeforeAndAfterAnnotation() throws {
+    @Test
+    func rendererProducesPNGBeforeAndAfterAnnotation() throws {
         let canvas = EditorCanvas(image: testImage())
-        let original = try XCTUnwrap(canvas.renderedPNGData())
+        let original = try #require(canvas.renderedPNGData())
 
         canvas.addText("rendered", at: CGPoint(x: 0.2, y: 0.2))
-        let annotated = try XCTUnwrap(canvas.renderedPNGData())
+        let annotated = try #require(canvas.renderedPNGData())
 
-        XCTAssertFalse(original.isEmpty)
-        XCTAssertFalse(annotated.isEmpty)
-        XCTAssertNotEqual(original, annotated)
-        XCTAssertNotNil(NSImage(data: annotated))
+        #expect(!original.isEmpty)
+        #expect(!annotated.isEmpty)
+        #expect(original != annotated)
+        #expect(NSImage(data: annotated) != nil)
     }
 
-    func testCopyCommandUsesInjectedClipboardWriter() throws {
+    @Test
+    func copyCommandUsesInjectedClipboardWriter() throws {
         let pasteboard = RecordingPasteboard()
         let controller = EditorWindowController(image: testImage(), pasteboard: pasteboard)
-        let canvas = try XCTUnwrap(controller.window?.contentView?.subviews.compactMap { $0 as? EditorCanvas }.first)
+        let canvas = try #require(controller.window?.contentView?.subviews.compactMap { $0 as? EditorCanvas }.first)
 
         canvas.commandHandler?(.copy)
 
-        XCTAssertEqual(pasteboard.writeCount, 1)
-        XCTAssertFalse(pasteboard.pngData.isEmpty)
-        XCTAssertFalse(pasteboard.tiffData.isEmpty)
+        #expect(pasteboard.writeCount == 1)
+        #expect(!pasteboard.pngData.isEmpty)
+        #expect(!pasteboard.tiffData.isEmpty)
     }
 
     private func testImage() -> NSImage {
@@ -66,8 +71,15 @@ final class EditorTests: XCTestCase {
 
 private final class RecordingPasteboard: ImagePasting {
     var writeCount = 0
+    var strings: [String] = []
     var pngData = Data()
     var tiffData = Data()
+
+    @discardableResult
+    func write(string: String) -> Bool {
+        strings.append(string)
+        return true
+    }
 
     @discardableResult
     func write(pngData: Data, tiffData: Data) -> Bool {

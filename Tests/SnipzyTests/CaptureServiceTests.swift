@@ -1,74 +1,80 @@
 import AppKit
-import XCTest
+import Testing
 @testable import Snipzy
 
-final class CaptureServiceTests: XCTestCase {
-    func testCaptureUsesInteractiveSelectionArgumentsAndValidatesOutput() throws {
+@Suite
+struct CaptureServiceTests {
+    @Test
+    func captureUsesInteractiveSelectionArgumentsAndValidatesOutput() throws {
         let runner = RecordingRunner()
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = CaptureService(runner: runner, temporaryDirectory: directory)
         let result = try service.capture()
 
-        XCTAssertEqual(runner.executable, "/usr/sbin/screencapture")
-        XCTAssertEqual(Array(runner.arguments.prefix(4)), ["-i", "-s", "-x", "-d"])
-        XCTAssertTrue(runner.arguments.last?.hasSuffix(".png") == true)
-        XCTAssertFalse(result.pngData.isEmpty)
-        XCTAssertFalse(result.tiffData.isEmpty)
-        XCTAssertGreaterThan(result.image.size.width, 0)
-        XCTAssertNotNil(runner.outputURL)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: runner.outputURL!.path))
+        #expect(runner.executable == "/usr/sbin/screencapture")
+        #expect(Array(runner.arguments.prefix(4)) == ["-i", "-s", "-x", "-d"])
+        #expect(runner.arguments.last?.hasSuffix(".png") == true)
+        #expect(!result.pngData.isEmpty)
+        #expect(!result.tiffData.isEmpty)
+        #expect(result.image.size.width > 0)
+        #expect(runner.outputURL != nil)
+        #expect(!FileManager.default.fileExists(atPath: runner.outputURL!.path))
     }
 
-    func testNonZeroCaptureStatusThrows() {
+    @Test
+    func nonZeroCaptureStatusThrows() {
         let runner = RecordingRunner(status: 1, error: Data("device unavailable".utf8), writesOutput: true)
-        XCTAssertThrowsError(try CaptureService(runner: runner).capture()) { error in
-            guard case let CaptureError.processFailed(status, message) = error else {
-                return XCTFail("Unexpected error: \(error)")
+        do {
+            _ = try CaptureService(runner: runner).capture()
+            Issue.record("Expected capture to throw")
+        } catch let error as CaptureError {
+            guard case let .processFailed(status, message) = error else {
+                Issue.record("Unexpected error: \(error)")
+                return
             }
-            XCTAssertEqual(status, 1)
-            XCTAssertEqual(message, "device unavailable")
+            #expect(status == 1)
+            #expect(message == "device unavailable")
+        } catch {
+            Issue.record("Unexpected error: \(error)")
         }
     }
 
-    func testInteractiveCancellationWithoutOutputThrowsCancelled() {
-        let runner = RecordingRunner(status: 1, error: Data("cancelled".utf8), outputData: nil)
+    @Test
+    func interactiveCancellationWithoutOutputThrowsCancelled() {
+        let runner = RecordingRunner(status: 1, error: Data(), outputData: nil)
 
-        XCTAssertThrowsError(try CaptureService(runner: runner).capture()) { error in
-            guard case CaptureError.cancelled = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
+        #expect(throws: CaptureError.cancelled) {
+            try CaptureService(runner: runner).capture()
         }
     }
 
-    func testSuccessfulProcessWithoutOutputIsCancelled() throws {
+    @Test
+    func successfulProcessWithoutOutputIsCancelled() throws {
         let runner = RecordingRunner(outputData: nil)
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = CaptureService(runner: runner, temporaryDirectory: directory)
 
-        XCTAssertThrowsError(try service.capture()) { error in
-            guard case CaptureError.cancelled = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
+        #expect(throws: CaptureError.cancelled) {
+            try service.capture()
         }
-        XCTAssertNotNil(runner.outputURL)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: runner.outputURL!.path))
+        #expect(runner.outputURL != nil)
+        #expect(!FileManager.default.fileExists(atPath: runner.outputURL!.path))
     }
 
-    func testNonEmptyInvalidOutputThrowsInvalidImageAndCleansUp() throws {
+    @Test
+    func nonEmptyInvalidOutputThrowsInvalidImageAndCleansUp() throws {
         let runner = RecordingRunner(outputData: Data("not an image".utf8))
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let service = CaptureService(runner: runner, temporaryDirectory: directory)
 
-        XCTAssertThrowsError(try service.capture()) { error in
-            guard case CaptureError.invalidImage = error else {
-                return XCTFail("Unexpected error: \(error)")
-            }
+        #expect(throws: CaptureError.invalidImage) {
+            try service.capture()
         }
-        XCTAssertNotNil(runner.outputURL)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: runner.outputURL!.path))
+        #expect(runner.outputURL != nil)
+        #expect(!FileManager.default.fileExists(atPath: runner.outputURL!.path))
     }
 
     private func makeTemporaryDirectory() throws -> URL {
@@ -90,12 +96,12 @@ private final class RecordingRunner: ProcessRunning {
     init(
         status: Int32 = 0,
         error: Data = Data(),
-        outputData: Data? = Self.validPNGData,
+        outputData: Data? = RecordingRunner.validPNGData,
         writesOutput: Bool = false
     ) {
         self.status = status
         self.error = error
-        self.outputData = writesOutput ? Self.validPNGData : outputData
+        self.outputData = writesOutput ? RecordingRunner.validPNGData : outputData
     }
 
     func run(executable: String, arguments: [String]) throws -> ProcessResult {
