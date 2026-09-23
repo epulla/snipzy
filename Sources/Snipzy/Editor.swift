@@ -8,6 +8,7 @@ enum AnnotationTool: String, CaseIterable {
     case ellipse
     case text
     case pixelate
+    case ocr
 
     var title: String {
         switch self {
@@ -18,6 +19,7 @@ enum AnnotationTool: String, CaseIterable {
         case .ellipse: return "Ellipse"
         case .text: return "Text"
         case .pixelate: return "Pixelate"
+        case .ocr: return "Read Text"
         }
     }
 
@@ -30,6 +32,7 @@ enum AnnotationTool: String, CaseIterable {
         case .ellipse: return "e"
         case .text: return "t"
         case .pixelate: return "b"
+        case .ocr: return "o"
         }
     }
 }
@@ -61,6 +64,8 @@ final class EditorCanvas: NSView {
     private var constrainDrag = false
     var textHandler: ((CGPoint) -> Void)?
     var commandHandler: ((EditorCommand) -> Void)?
+    var ocrHandler: ((CGRect) -> Void)?
+    private(set) var ocrSelection: CGRect?
 
     init(image: NSImage) {
         self.image = image
@@ -103,6 +108,19 @@ final class EditorCanvas: NSView {
     }
 
     var currentColor: NSColor { strokeColor }
+
+    var cgImage: CGImage? { bitmap?.cgImage }
+
+    func clearOCRSelection() {
+        ocrSelection = nil
+        needsDisplay = true
+    }
+
+    nonisolated static func ocrRegion(from start: CGPoint, to end: CGPoint) -> CGRect {
+        let region = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+        guard region.width >= 0.01, region.height >= 0.01 else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        return region
+    }
 
     func setLineWidth(_ width: CGFloat) {
         strokeWidth = max(1, width)
@@ -167,6 +185,7 @@ final class EditorCanvas: NSView {
         image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
         drawAnnotations(in: rect)
         drawInProgress(in: rect)
+        if let ocrSelection { strokeOCRRect(ocrSelection, in: rect) }
         NSGraphicsContext.restoreGraphicsState()
     }
 
@@ -202,9 +221,15 @@ final class EditorCanvas: NSView {
             constrainDrag = false
             needsDisplay = true
         }
+        if tool == .ocr {
+            let region = Self.ocrRegion(from: start, to: current)
+            ocrSelection = region
+            ocrHandler?(region)
+            return
+        }
+        guard tool != .text else { return }
         recordState()
         let points = (tool == .pen || tool == .highlighter) ? dragPoints : []
-        guard tool != .text else { return }
         let color = tool == .highlighter ? strokeColor.withAlphaComponent(0.35) : strokeColor
         let width = tool == .highlighter ? max(12, strokeWidth * 4) : strokeWidth
         annotations.append(Annotation(tool: tool, start: start, end: current, points: points, text: "", color: color, lineWidth: width))
@@ -253,10 +278,24 @@ final class EditorCanvas: NSView {
 
     private func drawInProgress(in rect: CGRect) {
         guard let start = dragStart, let current = dragCurrent else { return }
+        if tool == .ocr {
+            strokeOCRRect(Self.ocrRegion(from: start, to: current), in: rect)
+            return
+        }
         let color = tool == .highlighter ? strokeColor.withAlphaComponent(0.35) : strokeColor
         let width = tool == .highlighter ? max(12, strokeWidth * 4) : strokeWidth
         let annotation = Annotation(tool: tool, start: start, end: current, points: dragPoints, text: "", color: color, lineWidth: width)
         draw(annotation, in: rect)
+    }
+
+    private func strokeOCRRect(_ normalized: CGRect, in rect: CGRect) {
+        NSColor.controlAccentColor.setStroke()
+        let start = point(normalized.origin, in: rect)
+        let end = point(CGPoint(x: normalized.maxX, y: normalized.maxY), in: rect)
+        let path = NSBezierPath(rect: CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)))
+        path.lineWidth = 1.5
+        path.setLineDash([6, 4], count: 2, phase: 0)
+        path.stroke()
     }
 
     private func drawAnnotations(in rect: CGRect) {
@@ -295,6 +334,8 @@ final class EditorCanvas: NSView {
             NSString(string: annotation.text).draw(at: start, withAttributes: attributes)
         case .pixelate:
             drawPixelation(in: CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)), imageRect: rect)
+        case .ocr:
+            break
         }
     }
 
@@ -338,15 +379,20 @@ final class EditorCanvas: NSView {
 }
 
 @MainActor
-final class EditorWindowController: NSWindowController, NSWindowDelegate {
+final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopoverDelegate {
     private let canvas: EditorCanvas
     private let pasteboard: any ImagePasting
+    private let recognizer: any TextRecognizing
     private var inlineTextField: InlineTextField?
+    private(set) var ocrTask: Task<Void, Never>?
+    private(set) var ocrResult: OCRResultViewController?
+    private var popover: NSPopover?
     var onClose: ((EditorWindowController) -> Void)?
 
-    init(image: NSImage, pasteboard: any ImagePasting = SystemPasteboard()) {
+    init(image: NSImage, pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer()) {
         canvas = EditorCanvas(image: image)
         self.pasteboard = pasteboard
+        self.recognizer = recognizer
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Snipzy Editor"
         window.center()
@@ -354,6 +400,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         buildView()
         canvas.textHandler = { [weak self] point in self?.requestText(at: point) }
+        canvas.ocrHandler = { [weak self] region in self?.recognizeText(in: region) }
         canvas.commandHandler = { [weak self] command in
             switch command {
             case .undo: self?.undo()
@@ -368,7 +415,56 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func windowWillClose(_ notification: Notification) {
+        ocrTask?.cancel()
+        let old = popover
+        popover = nil
+        old?.close()
         onClose?(self)
+    }
+
+    func recognizeText(in region: CGRect) {
+        ocrTask?.cancel()
+        let old = popover
+        popover = nil
+        old?.close()
+        guard let image = canvas.cgImage else {
+            canvas.clearOCRSelection()
+            return
+        }
+        let result = OCRResultViewController(pasteboard: pasteboard)
+        result.loadViewIfNeeded()
+        ocrResult = result
+        let newPopover = NSPopover()
+        newPopover.contentViewController = result
+        newPopover.behavior = .transient
+        newPopover.delegate = self
+        result.popover = newPopover
+        popover = newPopover
+        if window?.isVisible == true {
+            let start = canvas.viewPoint(for: region.origin)
+            let end = canvas.viewPoint(for: CGPoint(x: region.maxX, y: region.maxY))
+            let anchor = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+            newPopover.show(relativeTo: anchor, of: canvas, preferredEdge: .maxY)
+        }
+        let recognizer = self.recognizer
+        ocrTask = Task { [weak result] in
+            do {
+                let text = try await recognizer.recognizeText(in: image, region: region)
+                guard !Task.isCancelled else { return }
+                result?.show(text: text)
+            } catch {
+                guard !Task.isCancelled else { return }
+                result?.show(error: error)
+            }
+        }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        guard (notification.object as? NSPopover) === popover else { return }
+        ocrTask?.cancel()
+        ocrResult = nil
+        popover = nil
+        canvas.clearOCRSelection()
     }
 
     private func buildView() {
@@ -382,6 +478,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
             let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
             button.bezelStyle = .texturedRounded
+            if tool == .ocr {
+                button.toolTip = "Recognize Text (O)"
+                if let image = NSImage(systemSymbolName: "eye", accessibilityDescription: "Recognize Text") {
+                    button.image = image
+                    button.imagePosition = .imageOnly
+                }
+            }
             toolbar.addArrangedSubview(button)
         }
         let colorWell = NSColorWell()
@@ -489,6 +592,88 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         field.removeFromSuperview()
         inlineTextField = nil
         window?.makeFirstResponder(canvas)
+    }
+}
+
+@MainActor
+final class OCRResultViewController: NSViewController {
+    private let pasteboard: any ImagePasting
+    private let progressIndicator = NSProgressIndicator()
+    private let scrollView = NSTextView.scrollableTextView()
+    private let copyButton: NSButton
+    private let closeButton: NSButton
+    weak var popover: NSPopover?
+
+    private var textView: NSTextView { scrollView.documentView as! NSTextView }
+
+    init(pasteboard: any ImagePasting) {
+        self.pasteboard = pasteboard
+        copyButton = NSButton(title: "Copy Text", target: nil, action: nil)
+        closeButton = NSButton(title: "Close", target: nil, action: nil)
+        super.init(nibName: nil, bundle: nil)
+        copyButton.target = self
+        copyButton.action = #selector(copyText)
+        copyButton.isEnabled = false
+        closeButton.target = self
+        closeButton.action = #selector(closePopover)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func loadView() {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+
+        progressIndicator.style = .spinning
+        progressIndicator.isDisplayedWhenStopped = false
+        progressIndicator.startAnimation(nil)
+        stack.addArrangedSubview(progressIndicator)
+
+        textView.isRichText = false
+        textView.isEditable = true
+        scrollView.hasVerticalScroller = true
+        scrollView.widthAnchor.constraint(equalToConstant: 360).isActive = true
+        scrollView.heightAnchor.constraint(equalToConstant: 200).isActive = true
+        stack.addArrangedSubview(scrollView)
+
+        let buttons = NSStackView(views: [copyButton, closeButton])
+        buttons.orientation = .horizontal
+        buttons.spacing = 8
+        stack.addArrangedSubview(buttons)
+        view = stack
+    }
+
+    func show(text: String) {
+        progressIndicator.stopAnimation(nil)
+        progressIndicator.isHidden = true
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            textView.string = "No text found"
+            copyButton.isEnabled = false
+        } else {
+            textView.string = text
+            copyButton.isEnabled = true
+        }
+    }
+
+    func show(error: Error) {
+        progressIndicator.stopAnimation(nil)
+        progressIndicator.isHidden = true
+        textView.string = error.localizedDescription
+        copyButton.isEnabled = false
+    }
+
+    var text: String { textView.string }
+    var canCopy: Bool { copyButton.isEnabled }
+
+    @objc func copyText() {
+        guard canCopy else { return }
+        pasteboard.write(string: textView.string)
+    }
+
+    @objc private func closePopover() {
+        popover?.close()
     }
 }
 

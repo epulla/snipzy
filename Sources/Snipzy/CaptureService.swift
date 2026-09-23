@@ -37,7 +37,7 @@ struct CapturedImage {
     let tiffData: Data
 }
 
-enum CaptureError: LocalizedError {
+enum CaptureError: LocalizedError, Equatable {
     case cancelled
     case processFailed(Int32, String)
     case invalidImage
@@ -111,10 +111,20 @@ struct CaptureService: @unchecked Sendable {
 
 protocol ImagePasting {
     @discardableResult
+    func write(string: String) -> Bool
+
+    @discardableResult
     func write(pngData: Data, tiffData: Data) -> Bool
 }
 
 struct SystemPasteboard: ImagePasting {
+    @discardableResult
+    func write(string: String) -> Bool {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        return pasteboard.setString(string, forType: .string)
+    }
+
     @discardableResult
     func write(pngData: Data, tiffData: Data) -> Bool {
         let pasteboard = NSPasteboard.general

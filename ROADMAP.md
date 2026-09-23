@@ -6,6 +6,7 @@
 - Interactive area capture through `/usr/sbin/screencapture -i -s -x -d`.
 - Annotation tools: pen, highlighter, arrow, rectangle, ellipse, text, and pixelate.
 - Undo, redo, clipboard copy, and PNG save.
+- On-device OCR region tool.
 - Swift package build and minimal `.app` bundling through `make bundle`.
 
 ## Next
@@ -15,6 +16,10 @@
 - Add user-configurable hotkey and annotation color/width settings.
 - Add persistent capture history and recent save locations.
 - Expand automated coverage around editor rendering and bundle validation.
+- Add per-tool render tests for pen, highlighter, arrow, shapes, and pixelate.
+- Add Shift-constrain and clamp tests.
+- Separate testable save writer from `NSSavePanel`.
+- Add OCR extras: translate, copy as table, and live text overlay.
 
 ## Plan B: ScreenCaptureKit
 
