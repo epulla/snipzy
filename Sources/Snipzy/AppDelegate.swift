@@ -60,8 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     controller.onClose = { [weak self, weak controller] closedController in
                         guard let controller else { return }
                         self?.editors.removeAll { $0 === controller && $0 === closedController }
+                        if self?.editors.isEmpty == true { NSApp.setActivationPolicy(.accessory) }
                     }
                     self.editors.append(controller)
+                    NSApp.setActivationPolicy(.regular)
                     controller.showWindow(self)
                     controller.window?.makeKeyAndOrderFront(self)
                     NSApp.activate(ignoringOtherApps: true)

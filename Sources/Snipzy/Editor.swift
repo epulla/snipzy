@@ -35,13 +35,26 @@ enum AnnotationTool: String, CaseIterable {
         case .ocr: return "o"
         }
     }
+
+    var symbolName: String {
+        switch self {
+        case .pen: return "pencil.tip"
+        case .highlighter: return "highlighter"
+        case .arrow: return "arrow.up.right"
+        case .rectangle: return "rectangle"
+        case .ellipse: return "circle"
+        case .text: return "textformat"
+        case .pixelate: return "squareshape.split.3x3"
+        case .ocr: return "eye"
+        }
+    }
 }
 
 struct Annotation {
     let id = UUID()
     let tool: AnnotationTool
-    let start: CGPoint
-    let end: CGPoint
+    var start: CGPoint
+    var end: CGPoint
     let points: [CGPoint]
     let text: String
     let color: NSColor
@@ -62,6 +75,7 @@ final class EditorCanvas: NSView {
     private var dragCurrent: CGPoint?
     private var dragPoints: [CGPoint] = []
     private var constrainDrag = false
+    private var movingText: (index: Int, last: CGPoint, moved: Bool)?
     var textHandler: ((CGPoint) -> Void)?
     var commandHandler: ((EditorCommand) -> Void)?
     var ocrHandler: ((CGRect) -> Void)?
@@ -193,6 +207,11 @@ final class EditorCanvas: NSView {
         let point = normalizedPoint(event.locationInWindow)
         guard point.x >= 0, point.x <= 1, point.y >= 0, point.y <= 1 else { return }
         if tool == .text {
+            let viewPoint = convert(event.locationInWindow, from: nil)
+            if let index = textIndex(at: viewPoint) {
+                movingText = (index, point, false)
+                return
+            }
             textHandler?(point)
             return
         }
@@ -204,6 +223,29 @@ final class EditorCanvas: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if var movingText {
+            guard annotations.indices.contains(movingText.index), annotations[movingText.index].tool == .text else {
+                self.movingText = nil
+                return
+            }
+            let current = normalizedPoint(event.locationInWindow)
+            let delta = CGPoint(x: current.x - movingText.last.x, y: current.y - movingText.last.y)
+            let annotation = annotations[movingText.index]
+            let nextStart = clamped(CGPoint(x: annotation.start.x + delta.x, y: annotation.start.y + delta.y))
+            let effectiveDelta = CGPoint(x: nextStart.x - annotation.start.x, y: nextStart.y - annotation.start.y)
+            if effectiveDelta.x != 0 || effectiveDelta.y != 0 {
+                if !movingText.moved {
+                    recordState()
+                    movingText.moved = true
+                }
+                annotations[movingText.index].start = nextStart
+                annotations[movingText.index].end = CGPoint(x: annotation.end.x + effectiveDelta.x, y: annotation.end.y + effectiveDelta.y)
+                needsDisplay = true
+            }
+            movingText.last = current
+            self.movingText = movingText
+            return
+        }
         guard dragStart != nil else { return }
         let point = normalizedPoint(event.locationInWindow)
         let adjustedPoint = adjusted(clamped(point))
@@ -213,6 +255,10 @@ final class EditorCanvas: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if movingText != nil {
+            movingText = nil
+            return
+        }
         guard let start = dragStart, let current = dragCurrent else { return }
         defer {
             dragStart = nil
@@ -269,6 +315,23 @@ final class EditorCanvas: NSView {
 
     private func point(_ normalized: CGPoint, in rect: CGRect) -> CGPoint {
         CGPoint(x: rect.minX + normalized.x * rect.width, y: rect.minY + normalized.y * rect.height)
+    }
+
+    private func textAttributes(_ annotation: Annotation, scale: CGFloat) -> [NSAttributedString.Key: Any] {
+        [.font: NSFont.systemFont(ofSize: max(1, 22 * scale), weight: .bold), .foregroundColor: annotation.color]
+    }
+
+    private func textIndex(at viewPoint: CGPoint) -> Int? {
+        let rect = imageRect
+        let scale = rect.width / max(1, image.size.width)
+        for index in annotations.indices.reversed() {
+            let annotation = annotations[index]
+            guard annotation.tool == .text else { continue }
+            let origin = point(annotation.start, in: rect)
+            let size = NSString(string: annotation.text).size(withAttributes: textAttributes(annotation, scale: scale))
+            if CGRect(origin: origin, size: size).contains(viewPoint) { return index }
+        }
+        return nil
     }
 
     private func recordState() {
@@ -330,8 +393,7 @@ final class EditorCanvas: NSView {
             path.lineWidth = lineWidth
             path.stroke()
         case .text:
-            let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: max(1, 22 * renderScale), weight: .bold), .foregroundColor: annotation.color]
-            NSString(string: annotation.text).draw(at: start, withAttributes: attributes)
+            NSString(string: annotation.text).draw(at: start, withAttributes: textAttributes(annotation, scale: renderScale))
         case .pixelate:
             drawPixelation(in: CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)), imageRect: rect)
         case .ocr:
@@ -379,11 +441,11 @@ final class EditorCanvas: NSView {
 }
 
 @MainActor
-final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopoverDelegate {
+final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopoverDelegate, NSTextFieldDelegate {
     private let canvas: EditorCanvas
     private let pasteboard: any ImagePasting
     private let recognizer: any TextRecognizing
-    private var inlineTextField: InlineTextField?
+    private var pendingText: (field: NSTextField, point: CGPoint)?
     private(set) var ocrTask: Task<Void, Never>?
     private(set) var ocrResult: OCRResultViewController?
     private var popover: NSPopover?
@@ -478,12 +540,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
             button.bezelStyle = .texturedRounded
-            if tool == .ocr {
-                button.toolTip = "Recognize Text (O)"
-                if let image = NSImage(systemSymbolName: "eye", accessibilityDescription: "Recognize Text") {
-                    button.image = image
-                    button.imagePosition = .imageOnly
-                }
+            button.toolTip = "\(tool.title) (\(tool.shortcut.uppercased()))"
+            if let image = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title) {
+                button.image = image
+                button.imagePosition = .imageOnly
             }
             toolbar.addArrangedSubview(button)
         }
@@ -538,6 +598,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     @objc private func redo() { canvas.redo() }
 
     @objc private func copyImage() {
+        finishText(commit: true)
         guard let png = canvas.renderedPNGData(), let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation else {
             showError(AppError.imageEncodingFailed)
             return
@@ -549,6 +610,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     }
 
     @objc private func saveImage() {
+        finishText(commit: true)
         guard let png = canvas.renderedPNGData() else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "Snipzy.png"
@@ -567,30 +629,42 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     }
 
     private func requestText(at point: CGPoint) {
-        guard inlineTextField == nil else { return }
-        let field = InlineTextField(frame: NSRect(origin: canvas.viewPoint(for: point), size: CGSize(width: 240, height: 30)))
+        guard pendingText == nil else { return }
+        let field = NSTextField(frame: NSRect(origin: canvas.viewPoint(for: point), size: CGSize(width: 240, height: 30)))
         field.font = .systemFont(ofSize: 22, weight: .bold)
         field.textColor = canvas.currentColor
-        field.backgroundColor = NSColor.white.withAlphaComponent(0.9)
-        field.isBezeled = true
+        field.isBezeled = false
+        field.isBordered = false
+        field.drawsBackground = false
         field.isEditable = true
-        field.onCommit = { [weak self, weak field] in
-            guard let self, let field else { return }
-            self.finishText(field, at: point, commit: true)
-        }
-        field.onCancel = { [weak self, weak field] in
-            guard let self, let field else { return }
-            self.finishText(field, at: point, commit: false)
-        }
-        inlineTextField = field
+        field.delegate = self
+        pendingText = (field, point)
         canvas.addSubview(field)
         window?.makeFirstResponder(field)
     }
 
-    private func finishText(_ field: InlineTextField, at point: CGPoint, commit: Bool) {
-        if commit { canvas.addText(field.stringValue, at: point) }
-        field.removeFromSuperview()
-        inlineTextField = nil
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        switch commandSelector {
+        case #selector(NSResponder.insertNewline(_:)):
+            finishText(commit: true)
+            return true
+        case #selector(NSResponder.cancelOperation(_:)):
+            finishText(commit: false)
+            return true
+        default:
+            return false
+        }
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        finishText(commit: true)
+    }
+
+    private func finishText(commit: Bool) {
+        guard let pending = pendingText else { return }
+        pendingText = nil
+        if commit { canvas.addText(pending.field.stringValue, at: pending.point) }
+        pending.field.removeFromSuperview()
         window?.makeFirstResponder(canvas)
     }
 }
@@ -679,21 +753,4 @@ final class OCRResultViewController: NSViewController {
 
 enum EditorCommand {
     case undo, redo, copy, save, close
-}
-
-@MainActor
-private final class InlineTextField: NSTextField {
-    var onCommit: (() -> Void)?
-    var onCancel: (() -> Void)?
-
-    override func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-        case 36, 76:
-            onCommit?()
-        case 53:
-            onCancel?()
-        default:
-            super.keyDown(with: event)
-        }
-    }
 }

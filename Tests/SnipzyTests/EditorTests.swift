@@ -60,6 +60,87 @@ struct EditorTests {
     }
 
     @Test
+    func copyWhileTypingIncludesPendingText() throws {
+        let pasteboard = RecordingPasteboard()
+        let controller = EditorWindowController(image: testImage(), pasteboard: pasteboard)
+        let canvas = try canvas(of: controller)
+        let baseline = try #require(canvas.renderedPNGData())
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.setTool(.text)
+        let window = try #require(controller.window)
+        let location = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2)), to: nil)
+        let event = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: event)
+        let field = try #require(canvas.subviews.compactMap { $0 as? NSTextField }.first)
+        field.stringValue = "hi"
+
+        canvas.commandHandler?(.copy)
+
+        #expect(canvas.annotations.count == 1)
+        #expect(canvas.annotations[0].text == "hi")
+        #expect(canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
+        #expect(pasteboard.pngData != baseline)
+    }
+
+    @Test
+    func returnCommitsTextAndEscapeDiscards() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.setTool(.text)
+        let window = try #require(controller.window)
+        let firstLocation = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2)), to: nil)
+        let firstEvent = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: firstLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: firstEvent)
+        let firstField = try #require(canvas.subviews.compactMap { $0 as? NSTextField }.first)
+        firstField.stringValue = "a"
+        _ = firstField.delegate?.control?(firstField, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:)))
+
+        #expect(canvas.annotations.count == 1)
+        #expect(canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
+
+        let secondLocation = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.7, y: 0.7)), to: nil)
+        let secondEvent = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: secondLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: secondEvent)
+        let secondField = try #require(canvas.subviews.compactMap { $0 as? NSTextField }.first)
+        secondField.stringValue = "b"
+        _ = secondField.delegate?.control?(secondField, textView: NSTextView(), doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+
+        #expect(canvas.annotations.count == 1)
+        #expect(canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
+    }
+
+    @Test
+    func textToolDragMovesExistingText() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.addText("move", at: CGPoint(x: 0.2, y: 0.2))
+        canvas.setTool(.text)
+        let window = try #require(controller.window)
+        let start = canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2))
+        let downLocation = canvas.convert(CGPoint(x: start.x + 3, y: start.y + 3), to: nil)
+        let endLocation = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.5, y: 0.5)), to: nil)
+        let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: downLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let drag = try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: endLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: endLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: down)
+        canvas.mouseDragged(with: drag)
+        canvas.mouseUp(with: up)
+
+        #expect(abs(canvas.annotations[0].start.x - 0.5) < 0.02)
+        #expect(abs(canvas.annotations[0].start.y - 0.5) < 0.02)
+        #expect(canvas.annotations.count == 1)
+        #expect(canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
+        canvas.undo()
+        #expect(abs(canvas.annotations[0].start.x - 0.2) < 0.02)
+        #expect(abs(canvas.annotations[0].start.y - 0.2) < 0.02)
+    }
+
+    @Test
     func ocrDragReportsRegionWithoutAnnotationOrHistory() throws {
         let controller = EditorWindowController(image: testImage())
         let canvas = try canvas(of: controller)
