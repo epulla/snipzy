@@ -224,20 +224,26 @@ final class EditorCanvas: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         if var movingText {
-            let current = normalizedPoint(event.locationInWindow)
-            if !movingText.moved {
-                recordState()
-                movingText.moved = true
+            guard annotations.indices.contains(movingText.index), annotations[movingText.index].tool == .text else {
+                self.movingText = nil
+                return
             }
+            let current = normalizedPoint(event.locationInWindow)
             let delta = CGPoint(x: current.x - movingText.last.x, y: current.y - movingText.last.y)
             let annotation = annotations[movingText.index]
             let nextStart = clamped(CGPoint(x: annotation.start.x + delta.x, y: annotation.start.y + delta.y))
             let effectiveDelta = CGPoint(x: nextStart.x - annotation.start.x, y: nextStart.y - annotation.start.y)
-            annotations[movingText.index].start = nextStart
-            annotations[movingText.index].end = CGPoint(x: annotation.end.x + effectiveDelta.x, y: annotation.end.y + effectiveDelta.y)
+            if effectiveDelta.x != 0 || effectiveDelta.y != 0 {
+                if !movingText.moved {
+                    recordState()
+                    movingText.moved = true
+                }
+                annotations[movingText.index].start = nextStart
+                annotations[movingText.index].end = CGPoint(x: annotation.end.x + effectiveDelta.x, y: annotation.end.y + effectiveDelta.y)
+                needsDisplay = true
+            }
             movingText.last = current
             self.movingText = movingText
-            needsDisplay = true
             return
         }
         guard dragStart != nil else { return }
