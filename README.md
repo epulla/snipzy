@@ -84,6 +84,9 @@ Run these on a real macOS desktop:
 13. Close the popover and confirm the dashed rectangle is cleared.
 14. Undo after OCR and confirm only real annotations are removed.
 15. Copy or save a PNG and confirm it has no dashed rectangle.
+16. With the editor open, switch to another app and confirm Snipzy appears in the Dock and Cmd-Tab; close the last editor and confirm the Dock icon disappears.
+17. Pick Text, type, press Return, and confirm the text has no background; drag the text with the Text tool and confirm it moves (Undo restores it).
+18. Pick Text, type without pressing Return, click `Copy`, and confirm the pasted image includes the text.
 
 ## Current Limits
 
