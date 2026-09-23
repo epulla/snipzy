@@ -35,6 +35,19 @@ enum AnnotationTool: String, CaseIterable {
         case .ocr: return "o"
         }
     }
+
+    var symbolName: String {
+        switch self {
+        case .pen: return "pencil.tip"
+        case .highlighter: return "highlighter"
+        case .arrow: return "arrow.up.right"
+        case .rectangle: return "rectangle"
+        case .ellipse: return "circle"
+        case .text: return "textformat"
+        case .pixelate: return "squareshape.split.3x3"
+        case .ocr: return "eye"
+        }
+    }
 }
 
 struct Annotation {
@@ -521,12 +534,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
             button.bezelStyle = .texturedRounded
-            if tool == .ocr {
-                button.toolTip = "Recognize Text (O)"
-                if let image = NSImage(systemSymbolName: "eye", accessibilityDescription: "Recognize Text") {
-                    button.image = image
-                    button.imagePosition = .imageOnly
-                }
+            button.toolTip = "\(tool.title) (\(tool.shortcut.uppercased()))"
+            if let image = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title) {
+                button.image = image
+                button.imagePosition = .imageOnly
             }
             toolbar.addArrangedSubview(button)
         }
