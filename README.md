@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/logo-with-label.png" width="280" alt="Snipzy logo"></p>
+
 # Snipzy
 
 Snipzy is a small macOS menu bar screenshot tool. Press `Cmd-Shift-4`, select
@@ -87,6 +89,9 @@ Run these on a real macOS desktop:
 16. With the editor open, switch to another app and confirm Snipzy appears in the Dock and Cmd-Tab; close the last editor and confirm the Dock icon disappears.
 17. Pick Text, type, press Return, and confirm the text has no background; drag the text with the Text tool and confirm it moves (Undo restores it).
 18. Pick Text, type without pressing Return, click `Copy`, and confirm the pasted image includes the text.
+19. Pick each tool and hover the image: each shows its own cursor; the letterbox shows the arrow; with Text, hovering existing text shows a hand.
+20. Hover a tool button for about a second and confirm a tooltip with its shortcut appears.
+21. Confirm `dist/Snipzy.app` shows the Snipzy icon in Finder and in the Dock while the editor is open.
 
 ## Current Limits
 

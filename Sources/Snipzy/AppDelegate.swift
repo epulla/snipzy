@@ -65,8 +65,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.editors.append(controller)
                     NSApp.setActivationPolicy(.regular)
                     controller.showWindow(self)
-                    controller.window?.makeKeyAndOrderFront(self)
-                    NSApp.activate(ignoringOtherApps: true)
+                    // Policy change must land before activation, else app stays inactive (no tooltips/cursor rects).
+                    DispatchQueue.main.async { [weak controller] in
+                        NSApp.activate()
+                        controller?.window?.makeKeyAndOrderFront(nil)
+                    }
                 case let .failure(error):
                     if let captureError = error as? CaptureError, case .cancelled = captureError {
                         break

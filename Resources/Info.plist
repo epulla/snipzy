@@ -22,5 +22,7 @@
 	<string>Snipzy needs screen access to capture selected regions.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 </dict>
 </plist>
