@@ -56,3 +56,7 @@ build directly.
 
 - [Roadmap](docs/ROADMAP.md)
 - [Cross-platform plan](docs/CROSS_PLATFORM_PLAN.md)
+
+## Dedication
+
+Dedicated to my beloved queen, DSI — [Doménica Soria](https://www.linkedin.com/in/dom%C3%A9nica-soria-40bb12184/).

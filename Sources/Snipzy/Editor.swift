@@ -935,6 +935,7 @@ final class OCRResultViewController: NSViewController {
 
 @MainActor
 final class HelpViewController: NSViewController {
+    static let dedicationURL = URL(string: "https://www.linkedin.com/in/dom%C3%A9nica-soria-40bb12184/")!
     private static let shortcuts = [
         ("⌘Z", "Undo"), ("⇧⌘Z", "Redo"), ("⌘C", "Copy image"), ("⌘S", "Save PNG"),
         ("⌘W", "Close editor"), ("?", "Toggle help"), ("⇧", "Square / circle"), ("⇧⌘4", "New capture")
@@ -971,6 +972,24 @@ final class HelpViewController: NSViewController {
         grid.column(at: 2).xPlacement = .trailing
         grid.column(at: 2).leadingPadding = 12
         stack.addArrangedSubview(grid)
+
+        let dedication = NSTextField(labelWithString: "Dedicated to my beloved queen, DSI —")
+        dedication.font = .systemFont(ofSize: 11)
+        dedication.textColor = .secondaryLabelColor
+        stack.setCustomSpacing(14, after: grid)
+        stack.addArrangedSubview(dedication)
+
+        let link = NSButton(title: "Doménica Soria", target: self, action: #selector(openDedicationLink))
+        link.bezelStyle = .inline
+        link.isBordered = false
+        link.attributedTitle = NSAttributedString(string: link.title, attributes: [
+            .foregroundColor: NSColor.linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ])
+        link.setAccessibilityLabel("Doménica Soria")
+        link.setAccessibilityRole(.link)
+        link.setAccessibilityHelp("Open Doménica Soria on LinkedIn")
+        stack.addArrangedSubview(link)
         view = stack
         // Popover otherwise sizes to the rows' width and squeezes out the edge insets.
         preferredContentSize = stack.fittingSize
@@ -1003,6 +1022,10 @@ final class HelpViewController: NSViewController {
         row.distribution = .fill
         row.spacing = 10
         return row
+    }
+
+    @objc private func openDedicationLink() {
+        NSWorkspace.shared.open(Self.dedicationURL)
     }
 }
 

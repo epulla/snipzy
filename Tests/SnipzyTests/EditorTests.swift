@@ -296,6 +296,18 @@ struct EditorTests {
     }
 
     @Test
+    func helpPopoverExposesAccessibleDedicationLink() throws {
+        let help = HelpViewController()
+        help.loadViewIfNeeded()
+
+        let link = try #require(help.view.subviews.compactMap { $0 as? NSButton }.first { $0.title == "Doménica Soria" })
+        #expect(link.isEnabled)
+        #expect(link.accessibilityLabel() == "Doménica Soria")
+        #expect(link.accessibilityRole() == .link)
+        #expect(HelpViewController.dedicationURL.absoluteString == "https://www.linkedin.com/in/dom%C3%A9nica-soria-40bb12184/")
+    }
+
+    @Test
     func toolbarTooltipsTrackHoverAndStayInsideWindow() throws {
         let controller = EditorWindowController(image: testImage())
         controller.window?.setContentSize(NSSize(width: 900, height: 650))
