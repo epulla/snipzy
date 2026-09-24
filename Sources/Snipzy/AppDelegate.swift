@@ -65,9 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.editors.append(controller)
                     NSApp.setActivationPolicy(.regular)
                     controller.showWindow(self)
-                    // Policy change must land before activation, else app stays inactive (no tooltips/cursor rects).
+                    // Ignore frontmost app so AppKit enables tooltips and cursor rects.
                     DispatchQueue.main.async { [weak controller] in
-                        NSApp.activate()
+                        NSApp.activate(ignoringOtherApps: true)
                         controller?.window?.makeKeyAndOrderFront(nil)
                     }
                 case let .failure(error):

@@ -147,15 +147,21 @@ struct EditorTests {
         controller.window?.setContentSize(NSSize(width: 900, height: 650))
         controller.window?.contentView?.layoutSubtreeIfNeeded()
         let inside = canvas.viewPoint(for: CGPoint(x: 0.5, y: 0.5))
-        var cursorIDs = Set<ObjectIdentifier>()
-        for tool in AnnotationTool.allCases where tool != .text {
+        canvas.setTool(.pen)
+        let pen = canvas.cursor(at: inside)
+        canvas.setTool(.highlighter)
+        let highlighter = canvas.cursor(at: inside)
+        #expect(pen !== NSCursor.arrow)
+        #expect(pen !== NSCursor.iBeam)
+        #expect(pen !== NSCursor.crosshair)
+        #expect(highlighter !== NSCursor.arrow)
+        #expect(highlighter !== NSCursor.iBeam)
+        #expect(highlighter !== NSCursor.crosshair)
+        #expect(pen !== highlighter)
+        for tool in [AnnotationTool.arrow, .rectangle, .ellipse, .pixelate, .ocr] {
             canvas.setTool(tool)
-            cursorIDs.insert(ObjectIdentifier(canvas.cursor(at: inside)))
+            #expect(canvas.cursor(at: inside) === NSCursor.crosshair)
         }
-        #expect(cursorIDs.count == 7)
-        #expect(!cursorIDs.contains(ObjectIdentifier(NSCursor.arrow)))
-        #expect(!cursorIDs.contains(ObjectIdentifier(NSCursor.iBeam)))
-        #expect(!cursorIDs.contains(ObjectIdentifier(NSCursor.crosshair)))
 
         canvas.setTool(.text)
         #expect(canvas.cursor(at: inside) === NSCursor.iBeam)
@@ -163,6 +169,31 @@ struct EditorTests {
         let point = canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2))
         #expect(canvas.cursor(at: CGPoint(x: point.x + 3, y: point.y + 3)) === NSCursor.openHand)
         #expect(canvas.cursor(at: CGPoint(x: 10, y: 300)) === NSCursor.arrow)
+    }
+
+    @Test
+    func penCursorHotspotIsOnGlyphTip() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let point = canvas.viewPoint(for: CGPoint(x: 0.5, y: 0.5))
+
+        for tool in [AnnotationTool.pen, .highlighter] {
+            canvas.setTool(tool)
+            let cursor = canvas.cursor(at: point)
+            #expect(cursor.image.size == CGSize(width: 24, height: 24))
+            if tool == .pen {
+                #expect(cursor.hotSpot.y < 12)
+            } else {
+                #expect(cursor.hotSpot.x < 12)
+                #expect(cursor.hotSpot.y > 12)
+            }
+            let representation = try #require(cursor.image.representations.compactMap { $0 as? NSBitmapImageRep }.first)
+            let pixelX = Int(cursor.hotSpot.x * 2)
+            let pixelY = Int(cursor.hotSpot.y * 2)
+            #expect((representation.colorAt(x: pixelX, y: pixelY)?.alphaComponent ?? 0) > 0.5)
+        }
     }
 
     @Test
@@ -242,6 +273,24 @@ struct EditorTests {
         #expect(controller.ocrResult?.text == "stub failure")
         #expect(controller.ocrResult?.canCopy == false)
         #expect(pasteboard.strings.isEmpty)
+    }
+
+    @Test
+    func helpTogglesPopoverAndQuestionMarkOpensIt() throws {
+        let controller = EditorWindowController(image: testImage())
+        controller.toggleHelp()
+        #expect(controller.helpPopover?.contentViewController is HelpViewController)
+        controller.toggleHelp()
+        #expect(controller.helpPopover == nil)
+
+        let canvas = try canvas(of: controller)
+        let window = try #require(controller.window)
+        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.shift], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "?", charactersIgnoringModifiers: "?", isARepeat: false, keyCode: 44))
+        canvas.keyDown(with: event)
+        #expect(controller.helpPopover != nil)
+
+        let toolbar = try #require(window.contentView?.subviews.compactMap { $0 as? NSStackView }.first)
+        #expect(toolbar.arrangedSubviews.compactMap { $0 as? NSButton }.contains { $0.bezelStyle == .helpButton })
     }
 
     private func canvas(of controller: EditorWindowController) throws -> EditorCanvas {
