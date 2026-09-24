@@ -40,6 +40,30 @@ The current Carbon global hotkey implementation does not require Accessibility
 permission. macOS may still show different prompts depending on how the app is
 launched or managed.
 
+## Install
+
+Download `Snipzy-<version>.zip` from
+[Releases](https://github.com/epulla/snipzy/releases), unzip it, and move
+`Snipzy.app` to `/Applications`.
+
+Release builds are universal (Apple Silicon + Intel), ad-hoc signed, and not
+notarized, so Gatekeeper blocks first launch. Right-click the app and choose
+Open. On macOS 15+, this may be replaced by `System Settings > Privacy &
+Security > Open Anyway`. Alternatively, run:
+
+```sh
+xattr -d com.apple.quarantine /Applications/Snipzy.app
+```
+
+Optional checksum:
+
+```sh
+shasum -a 256 -c Snipzy-<version>.zip.sha256
+```
+
+Screen Recording permission may need re-granting after each update because the
+ad-hoc signature changes.
+
 ## Build
 
 ```sh
@@ -56,7 +80,21 @@ adds the Command Line Tools framework search path that SwiftPM omits, so run
 `make bundle` builds a release executable and creates `dist/Snipzy.app` without
 changing `Resources/Info.plist`. The bundler resolves paths from its own
 location, so it can run from any working directory. Override `APP_PATH` or
-`DIST_DIR` when a different output location is needed.
+`DIST_DIR` when a different output location is needed. `bundle.sh` also accepts
+`ARCHS="arm64 x86_64"`, `APP_VERSION`, and `BUILD_NUMBER`; the version and build
+number stamp the bundled `Info.plist` copy only, while `Resources/Info.plist`
+is unchanged.
+
+## Release
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`. It tests, builds a
+universal bundle stamped with the tag version, and publishes a GitHub Release
+with the zip, sha256, and auto-generated notes.
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
 
 ## OCR
 
@@ -97,7 +135,7 @@ Run these on a real macOS desktop:
 
 - Capture depends on the macOS `screencapture` command and its permission behavior.
 - Capture is selection-based; window and display-specific UI are not exposed by Snipzy.
-- App distribution, signing, notarization, and update delivery are not set up.
+- Releases are ad-hoc signed; notarization and update delivery are not set up.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for planned work and the ScreenCaptureKit
 fallback, and [docs/CROSS_PLATFORM_PLAN.md](docs/CROSS_PLATFORM_PLAN.md) for a

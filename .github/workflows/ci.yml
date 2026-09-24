@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: make build
+      - run: make test
+      - run: ARCHS="arm64 x86_64" make bundle && lipo -archs dist/Snipzy.app/Contents/MacOS/Snipzy

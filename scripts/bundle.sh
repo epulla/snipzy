@@ -9,6 +9,10 @@ DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
 APP_PATH="${APP_PATH:-$DIST_DIR/$APP_NAME.app}"
 INFO_PLIST="$ROOT_DIR/Resources/Info.plist"
 ICON_PNG="$ROOT_DIR/Resources/AppIcon.png"
+ARCH_FLAGS=()
+for arch in ${ARCHS:-}; do
+    ARCH_FLAGS+=(--arch "$arch")
+done
 
 if ! command -v swift >/dev/null 2>&1; then
     printf 'error: swift executable not found\n' >&2
@@ -25,8 +29,8 @@ if [[ ! -f "$ICON_PNG" ]]; then
     exit 1
 fi
 
-BIN_DIR="$(swift build --package-path "$ROOT_DIR" -c "$CONFIGURATION" --show-bin-path)"
-swift build --package-path "$ROOT_DIR" -c "$CONFIGURATION" --product "$APP_NAME"
+BIN_DIR="$(swift build --package-path "$ROOT_DIR" -c "$CONFIGURATION" --show-bin-path "${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}")"
+swift build --package-path "$ROOT_DIR" -c "$CONFIGURATION" --product "$APP_NAME" "${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"}"
 BIN_PATH="$BIN_DIR/$APP_NAME"
 
 if [[ ! -x "$BIN_PATH" ]]; then
@@ -38,6 +42,12 @@ fi
 /bin/mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 /usr/bin/install -m 755 "$BIN_PATH" "$APP_PATH/Contents/MacOS/$APP_NAME"
 /bin/cp "$INFO_PLIST" "$APP_PATH/Contents/Info.plist"
+if [[ -n ${APP_VERSION:-} ]]; then
+    /usr/bin/plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$APP_PATH/Contents/Info.plist"
+fi
+if [[ -n ${BUILD_NUMBER:-} ]]; then
+    /usr/bin/plutil -replace CFBundleVersion -string "$BUILD_NUMBER" "$APP_PATH/Contents/Info.plist"
+fi
 /usr/bin/plutil -insert CFBundleExecutable -string "$APP_NAME" "$APP_PATH/Contents/Info.plist"
 ICONSET_DIR="$(/usr/bin/mktemp -d)/AppIcon.iconset"
 trap '/bin/rm -rf "$(dirname "$ICONSET_DIR")"' EXIT
