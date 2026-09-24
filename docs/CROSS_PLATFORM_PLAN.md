@@ -1,9 +1,11 @@
-# Cross-Platform Plan (Proposal)
+# Cross-Platform Plan (Deferred)
 
-Status: **proposal, not decided**. This documents how Snipzy could be ported to
-macOS, Windows, and Linux (X11 + Wayland) as a new repo, `snipzy.app`, using
-Tauri v2 + React. The current Swift/AppKit app stays as-is until a decision is
-made.
+Status: **deferred**. This documents how Snipzy could be ported to macOS,
+Windows, and Linux (X11 + Wayland) as a new repo, `snipzy.app`, using Tauri v2 +
+React. Keep developing the Swift/AppKit app and prioritize the macOS work in
+`docs/ROADMAP.md`, especially signed releases, capture/error handling, and
+configurable settings. Do not start a cross-platform rewrite without evidence
+of demand and capacity to maintain and test each platform.
 
 ## Goal
 
@@ -193,7 +195,13 @@ hotkey UI, portal GlobalShortcuts.
 Rust ~500 LOC, TS ~1500 LOC, tests ~600 LOC. Roughly 1.5-2x the current
 Swift codebase (~1160 LOC source, ~470 LOC tests).
 
-## Decision needed
+## Revisit when
 
-- Proceed with the Tauri port in a new `snipzy.app` repo, or
-- Keep Snipzy macOS-only and continue the Swift roadmap in `docs/ROADMAP.md`.
+- Windows or Linux users request Snipzy with enough concrete interest to
+  justify building and maintaining those versions.
+- The macOS app has signed, notarized releases and its core roadmap work is
+  stable enough to support a second implementation.
+
+Before committing to a port, prototype capture, overlays, hotkeys, and OCR on
+target platforms. Validate Wayland and mixed-DPI behavior in particular;
+editor portability alone does not establish feature parity.
