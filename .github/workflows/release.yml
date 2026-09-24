@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test
+      - name: Build release
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          ARCHS="arm64 x86_64" APP_VERSION="$VERSION" BUILD_NUMBER="$BUILD_NUMBER" make bundle
+          ARCHES="$(lipo -archs dist/Snipzy.app/Contents/MacOS/Snipzy)"
+          for arch in arm64 x86_64; do
+            case " $ARCHES " in
+              *" $arch "*) ;;
+              *) echo "universal binary missing $arch: $ARCHES" >&2; exit 1 ;;
+            esac
+          done
+      - name: Package release
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent dist/Snipzy.app "dist/Snipzy-$VERSION.zip"
+          (cd dist && shasum -a 256 "Snipzy-$VERSION.zip" > "Snipzy-$VERSION.zip.sha256")
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "dist/Snipzy-$VERSION.zip" "dist/Snipzy-$VERSION.zip.sha256" --title "Snipzy $VERSION" --generate-notes
