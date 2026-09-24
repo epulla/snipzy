@@ -279,7 +279,9 @@ struct EditorTests {
     func helpTogglesPopoverAndQuestionMarkOpensIt() throws {
         let controller = EditorWindowController(image: testImage())
         controller.toggleHelp()
-        #expect(controller.helpPopover?.contentViewController is HelpViewController)
+        let help = try #require(controller.helpPopover?.contentViewController as? HelpViewController)
+        let fitting = help.view.fittingSize
+        #expect(help.preferredContentSize == fitting)
         controller.toggleHelp()
         #expect(controller.helpPopover == nil)
 

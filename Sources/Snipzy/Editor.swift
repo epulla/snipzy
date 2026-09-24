@@ -956,7 +956,9 @@ final class HelpViewController: NSViewController {
         }
         let separator = NSBox()
         separator.boxType = .separator
+        stack.setCustomSpacing(14, after: stack.arrangedSubviews[stack.arrangedSubviews.count - 1])
         stack.addArrangedSubview(separator)
+        stack.setCustomSpacing(14, after: separator)
         separator.widthAnchor.constraint(equalToConstant: width).isActive = true
         stack.addArrangedSubview(sectionTitle("Shortcuts"))
 
@@ -970,6 +972,8 @@ final class HelpViewController: NSViewController {
         grid.column(at: 2).leadingPadding = 12
         stack.addArrangedSubview(grid)
         view = stack
+        // Popover otherwise sizes to the rows' width and squeezes out the edge insets.
+        preferredContentSize = stack.fittingSize
     }
 
     private func sectionTitle(_ text: String) -> NSTextField {
