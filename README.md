@@ -94,4 +94,6 @@ Run these on a real macOS desktop:
 - Capture is selection-based; window and display-specific UI are not exposed by Snipzy.
 - App distribution, signing, notarization, and update delivery are not set up.
 
-See [ROADMAP.md](ROADMAP.md) for planned work and the ScreenCaptureKit fallback.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for planned work and the ScreenCaptureKit
+fallback, and [docs/CROSS_PLATFORM_PLAN.md](docs/CROSS_PLATFORM_PLAN.md) for a
+proposed (undecided) Tauri + React port to Windows and Linux.
