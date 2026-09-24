@@ -128,7 +128,7 @@ Run these on a real macOS desktop:
 17. Pick Text, type, press Return, and confirm the text has no background; drag the text with the Text tool and confirm it moves (Undo restores it).
 18. Pick Text, type without pressing Return, click `Copy`, and confirm the pasted image includes the text.
 19. Pick each tool and hover the image: pen/highlighter show their icon cursor and strokes start at the icon tip; other drawing tools show a crosshair; letterbox arrow. Text hovering existing text shows a hand.
-20. Hover a tool or Undo/Redo/Copy/Save button for about a second right after capture (without clicking the editor first) and confirm a tooltip.
+20. Right after capture (without clicking the editor first), hover any toolbar control and confirm a tooltip with its shortcut keycap appears below it within half a second; hovering the `?` button keeps the tooltip inside the window.
 21. Confirm `dist/Snipzy.app` shows the Snipzy icon in Finder and in the Dock while the editor is open.
 22. Click `?` (or press `?`) and confirm the help popover lists every tool and shortcut; click outside to dismiss.
 

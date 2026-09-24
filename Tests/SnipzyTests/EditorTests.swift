@@ -293,6 +293,24 @@ struct EditorTests {
         #expect(toolbar.arrangedSubviews.compactMap { $0 as? NSButton }.contains { $0.bezelStyle == .helpButton })
     }
 
+    @Test
+    func toolbarTooltipsTrackHoverAndStayInsideWindow() throws {
+        let controller = EditorWindowController(image: testImage())
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        let content = try #require(controller.window?.contentView)
+        content.layoutSubtreeIfNeeded()
+        let toolbar = try #require(content.subviews.compactMap { $0 as? NSStackView }.first)
+        let controls = toolbar.arrangedSubviews.compactMap { $0 as? NSControl }
+        #expect(controls.count == 15)
+        #expect(controls.allSatisfy { control in control.trackingAreas.contains { $0.owner === controller && $0.options.contains(.activeAlways) } })
+
+        let help = try #require(controls.last)
+        controller.showTooltip("Help", shortcut: "?", for: help)
+        let tooltip = try #require(controller.tooltip)
+        #expect(content.bounds.contains(tooltip.frame))
+        #expect(tooltip.frame.maxY <= help.convert(help.bounds, to: content).minY)
+    }
+
     private func canvas(of controller: EditorWindowController) throws -> EditorCanvas {
         try #require(controller.window?.contentView?.subviews.compactMap { $0 as? EditorCanvas }.first)
     }

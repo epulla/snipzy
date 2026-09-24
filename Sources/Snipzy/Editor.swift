@@ -51,14 +51,14 @@ enum AnnotationTool: String, CaseIterable {
 
     var helpText: String {
         switch self {
-        case .pen: return "Draw freehand strokes."
-        case .highlighter: return "Draw translucent, wide strokes."
-        case .arrow: return "Drag to draw an arrow."
-        case .rectangle: return "Drag to draw a rectangle; hold Shift to constrain it to a square."
-        case .ellipse: return "Drag to draw an ellipse; hold Shift to constrain it to a circle."
-        case .text: return "Click to type; Return commits, Esc cancels, and dragging existing text moves it."
-        case .pixelate: return "Drag to obscure a region."
-        case .ocr: return "Drag a region to read text, click for the whole image, and copy from the popover."
+        case .pen: return "Draw freehand."
+        case .highlighter: return "Translucent marker for emphasis."
+        case .arrow: return "Drag to point at something."
+        case .rectangle: return "Drag a box. Hold Shift for a square."
+        case .ellipse: return "Drag an oval. Hold Shift for a circle."
+        case .text: return "Click to type. Drag existing text to move it."
+        case .pixelate: return "Drag to hide sensitive areas."
+        case .ocr: return "Drag to copy text out of the image."
         }
     }
 }
@@ -534,6 +534,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private(set) var helpPopover: NSPopover?
     private var helpButton: NSButton!
     private var popover: NSPopover?
+    private var tooltipTargets: [ObjectIdentifier: (view: NSView, title: String, shortcut: String?)] = [:]
+    private var tooltipTask: Task<Void, Never>?
+    private(set) var tooltip: NSView?
     var onClose: ((EditorWindowController) -> Void)?
 
     init(image: NSImage, pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer()) {
@@ -633,22 +636,22 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
             button.bezelStyle = .texturedRounded
-            button.toolTip = "\(tool.title) (\(tool.shortcut.uppercased()))"
             if let image = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title) {
                 button.image = image
                 button.imagePosition = .imageOnly
             }
+            addTooltip(to: button, title: tool.title, shortcut: tool.shortcut.uppercased())
             toolbar.addArrangedSubview(button)
         }
         let colorWell = NSColorWell()
         colorWell.color = canvas.currentColor
         colorWell.target = self
         colorWell.action = #selector(changeColor(_:))
-        colorWell.toolTip = "Annotation color"
+        addTooltip(to: colorWell, title: "Annotation color")
         toolbar.addArrangedSubview(colorWell)
         let widthSlider = NSSlider(value: 3, minValue: 1, maxValue: 12, target: self, action: #selector(changeWidth(_:)))
         widthSlider.controlSize = .small
-        widthSlider.toolTip = "Line width"
+        addTooltip(to: widthSlider, title: "Line width")
         widthSlider.widthAnchor.constraint(equalToConstant: 90).isActive = true
         toolbar.addArrangedSubview(widthSlider)
         let spacer = NSView()
@@ -657,14 +660,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         let redo = NSButton(title: "Redo", target: self, action: #selector(redo))
         let copy = NSButton(title: "Copy", target: self, action: #selector(copyImage))
         let save = NSButton(title: "Save", target: self, action: #selector(saveImage))
-        undo.toolTip = "Undo (⌘Z)"
-        redo.toolTip = "Redo (⇧⌘Z)"
-        copy.toolTip = "Copy (⌘C)"
-        save.toolTip = "Save (⌘S)"
+        addTooltip(to: undo, title: "Undo", shortcut: "⌘Z")
+        addTooltip(to: redo, title: "Redo", shortcut: "⇧⌘Z")
+        addTooltip(to: copy, title: "Copy image", shortcut: "⌘C")
+        addTooltip(to: save, title: "Save PNG", shortcut: "⌘S")
         helpButton = NSButton(title: "", target: self, action: #selector(toggleHelp))
         helpButton.bezelStyle = .helpButton
-        helpButton.toolTip = "Help (?)"
         helpButton.setAccessibilityLabel("Help")
+        addTooltip(to: helpButton, title: "Help", shortcut: "?")
         [undo, redo, copy, save, helpButton].forEach { toolbar.addArrangedSubview($0) }
         contentView.addSubview(toolbar)
         contentView.addSubview(canvas)
@@ -680,6 +683,68 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+    }
+
+    // Custom tooltips: native ones wait ~1.5s and need an active app; activeAlways does not.
+    private func addTooltip(to view: NSView, title: String, shortcut: String? = nil) {
+        view.setAccessibilityHelp(shortcut.map { "\(title) (\($0))" } ?? title)
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        view.addTrackingArea(area)
+        tooltipTargets[ObjectIdentifier(area)] = (view, title, shortcut)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard let area = event.trackingArea, let target = tooltipTargets[ObjectIdentifier(area)] else { return super.mouseEntered(with: event) }
+        tooltipTask?.cancel()
+        tooltipTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self?.showTooltip(target.title, shortcut: target.shortcut, for: target.view)
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard let area = event.trackingArea, tooltipTargets[ObjectIdentifier(area)] != nil else { return super.mouseExited(with: event) }
+        tooltipTask?.cancel()
+        tooltip?.removeFromSuperview()
+        tooltip = nil
+    }
+
+    func showTooltip(_ title: String, shortcut: String?, for view: NSView) {
+        tooltip?.removeFromSuperview()
+        guard let contentView = window?.contentView else { return }
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 12)
+        let content = NSStackView(views: [label] + (shortcut.map { [keycap($0)] } ?? []))
+        content.spacing = 6
+        content.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: shortcut == nil ? 8 : 4)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        let bubble = NSBox()
+        bubble.boxType = .custom
+        bubble.titlePosition = .noTitle
+        bubble.cornerRadius = 6
+        bubble.borderWidth = 1
+        bubble.borderColor = .separatorColor
+        bubble.fillColor = .windowBackgroundColor
+        bubble.wantsLayer = true
+        let shadow = NSShadow()
+        shadow.shadowBlurRadius = 6
+        shadow.shadowOffset = NSSize(width: 0, height: -2)
+        shadow.shadowColor = .black.withAlphaComponent(0.25)
+        bubble.shadow = shadow
+        bubble.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: bubble.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: bubble.trailingAnchor),
+            content.topAnchor.constraint(equalTo: bubble.topAnchor),
+            content.bottomAnchor.constraint(equalTo: bubble.bottomAnchor)
+        ])
+        let size = content.fittingSize
+        let anchor = view.convert(view.bounds, to: contentView)
+        let x = min(max(anchor.midX - size.width / 2, 6), contentView.bounds.width - size.width - 6)
+        bubble.frame = CGRect(x: x, y: anchor.minY - size.height - 4, width: size.width, height: size.height)
+        contentView.addSubview(bubble)
+        tooltip = bubble
     }
 
     @objc private func selectTool(_ sender: NSButton) {
@@ -870,55 +935,97 @@ final class OCRResultViewController: NSViewController {
 
 @MainActor
 final class HelpViewController: NSViewController {
+    private static let shortcuts = [
+        ("⌘Z", "Undo"), ("⇧⌘Z", "Redo"), ("⌘C", "Copy image"), ("⌘S", "Save PNG"),
+        ("⌘W", "Close editor"), ("?", "Toggle help"), ("⇧", "Square / circle"), ("⇧⌘4", "New capture")
+    ]
+    private let width: CGFloat = 320
+
     override func loadView() {
         let stack = NSStackView()
         stack.orientation = .vertical
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 16, right: 16)
 
-        let toolRows = AnnotationTool.allCases.map { tool in
-            [
-                NSImageView(image: NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title) ?? NSImage()),
-                boldLabel(tool.title),
-                NSTextField(labelWithString: tool.shortcut.uppercased()),
-                wrappingLabel(tool.helpText)
-            ]
+        stack.addArrangedSubview(sectionTitle("Tools"))
+        for tool in AnnotationTool.allCases {
+            let row = toolRow(tool)
+            stack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalToConstant: width).isActive = true
         }
-        let tools = NSGridView(views: toolRows)
-        tools.rowSpacing = 5
-        tools.columnSpacing = 8
-        tools.column(at: 0).width = 18
-        tools.column(at: 1).width = 72
-        tools.column(at: 2).width = 30
-        tools.column(at: 3).width = 240
-        stack.addArrangedSubview(tools)
+        let separator = NSBox()
+        separator.boxType = .separator
+        stack.addArrangedSubview(separator)
+        separator.widthAnchor.constraint(equalToConstant: width).isActive = true
+        stack.addArrangedSubview(sectionTitle("Shortcuts"))
 
-        let title = boldLabel("Shortcuts")
-        stack.addArrangedSubview(title)
-        let shortcutRows = [
-            ["⌘Z", "Undo"], ["⇧⌘Z", "Redo"], ["⌘C", "Copy image"], ["⌘S", "Save PNG"],
-            ["⌘W", "Close"], ["?", "Help"], ["⇧ drag", "Constrain shape"], ["⇧⌘4", "Capture"]
-        ].map { row in row.map { NSTextField(labelWithString: $0) } }
-        let shortcuts = NSGridView(views: shortcutRows)
-        shortcuts.rowSpacing = 3
-        shortcuts.columnSpacing = 8
-        shortcuts.column(at: 0).width = 52
-        stack.addArrangedSubview(shortcuts)
+        let pairs = Self.shortcuts.map { [keycap($0.0), NSTextField(labelWithString: $0.1)] }
+        let grid = NSGridView(views: stride(from: 0, to: pairs.count, by: 2).map { pairs[$0] + pairs[$0 + 1] })
+        grid.rowSpacing = 8
+        grid.columnSpacing = 8
+        grid.yPlacement = .center
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 2).xPlacement = .trailing
+        grid.column(at: 2).leadingPadding = 12
+        stack.addArrangedSubview(grid)
         view = stack
     }
 
-    private func boldLabel(_ text: String) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
-        label.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+    private func sectionTitle(_ text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text.uppercased())
+        label.font = .systemFont(ofSize: 11, weight: .semibold)
+        label.textColor = .secondaryLabelColor
         return label
     }
 
-    private func wrappingLabel(_ text: String) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.maximumNumberOfLines = 0
-        label.preferredMaxLayoutWidth = 240
-        return label
+    private func toolRow(_ tool: AnnotationTool) -> NSStackView {
+        let icon = NSImageView(image: NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 15, weight: .regular)) ?? NSImage())
+        icon.contentTintColor = .secondaryLabelColor
+        icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
+        let title = NSTextField(labelWithString: tool.title)
+        title.font = .systemFont(ofSize: 13, weight: .semibold)
+        let detail = NSTextField(wrappingLabelWithString: tool.helpText)
+        detail.font = .systemFont(ofSize: 11)
+        detail.textColor = .secondaryLabelColor
+        detail.preferredMaxLayoutWidth = width - 64
+        let text = NSStackView(views: [title, detail])
+        text.orientation = .vertical
+        text.alignment = .leading
+        text.spacing = 1
+        text.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [icon, text, keycap(tool.shortcut.uppercased())])
+        row.alignment = .centerY
+        row.distribution = .fill
+        row.spacing = 10
+        return row
     }
+}
+
+@MainActor
+private func keycap(_ key: String) -> NSView {
+    let label = NSTextField(labelWithString: key)
+    label.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
+    label.textColor = .secondaryLabelColor
+    label.alignment = .center
+    label.translatesAutoresizingMaskIntoConstraints = false
+    let box = NSBox()
+    box.boxType = .custom
+    box.titlePosition = .noTitle
+    box.cornerRadius = 4
+    box.borderWidth = 1
+    box.borderColor = .separatorColor
+    box.fillColor = .quaternaryLabelColor
+    box.translatesAutoresizingMaskIntoConstraints = false
+    box.addSubview(label)
+    NSLayoutConstraint.activate([
+        label.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 5),
+        label.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -5),
+        label.centerYAnchor.constraint(equalTo: box.centerYAnchor),
+        box.heightAnchor.constraint(equalToConstant: 20),
+        box.widthAnchor.constraint(greaterThanOrEqualToConstant: 22)
+    ])
+    return box
 }
 
 enum EditorCommand {
