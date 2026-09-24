@@ -5,7 +5,7 @@
 macOS menu bar screenshot tool. Capture a region, annotate it, then copy or
 save the result.
 
-[Watch the demo](docs/assets/demo_0-1-1.mp4)
+https://github.com/user-attachments/assets/77979820-1cdc-40c5-b665-64b2307adfbc
 
 ## Requirements
 
