@@ -141,6 +141,31 @@ struct EditorTests {
     }
 
     @Test
+    func cursorFollowsToolAndPosition() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let inside = canvas.viewPoint(for: CGPoint(x: 0.5, y: 0.5))
+        var cursorIDs = Set<ObjectIdentifier>()
+        for tool in AnnotationTool.allCases where tool != .text {
+            canvas.setTool(tool)
+            cursorIDs.insert(ObjectIdentifier(canvas.cursor(at: inside)))
+        }
+        #expect(cursorIDs.count == 7)
+        #expect(!cursorIDs.contains(ObjectIdentifier(NSCursor.arrow)))
+        #expect(!cursorIDs.contains(ObjectIdentifier(NSCursor.iBeam)))
+        #expect(!cursorIDs.contains(ObjectIdentifier(NSCursor.crosshair)))
+
+        canvas.setTool(.text)
+        #expect(canvas.cursor(at: inside) === NSCursor.iBeam)
+        canvas.addText("x", at: CGPoint(x: 0.2, y: 0.2))
+        let point = canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2))
+        #expect(canvas.cursor(at: CGPoint(x: point.x + 3, y: point.y + 3)) === NSCursor.openHand)
+        #expect(canvas.cursor(at: CGPoint(x: 10, y: 300)) === NSCursor.arrow)
+    }
+
+    @Test
     func ocrDragReportsRegionWithoutAnnotationOrHistory() throws {
         let controller = EditorWindowController(image: testImage())
         let canvas = try canvas(of: controller)

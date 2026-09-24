@@ -76,6 +76,7 @@ final class EditorCanvas: NSView {
     private var dragPoints: [CGPoint] = []
     private var constrainDrag = false
     private var movingText: (index: Int, last: CGPoint, moved: Bool)?
+    private var cursors: [AnnotationTool: NSCursor] = [:]
     var textHandler: ((CGPoint) -> Void)?
     var commandHandler: ((EditorCommand) -> Void)?
     var ocrHandler: ((CGRect) -> Void)?
@@ -92,6 +93,59 @@ final class EditorCanvas: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func updateTrackingAreas() {
+        trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.cursorUpdate, .mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
+        super.updateTrackingAreas()
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        cursor(at: convert(event.locationInWindow, from: nil)).set()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        cursor(at: convert(event.locationInWindow, from: nil)).set()
+    }
+
+    func cursor(at viewPoint: CGPoint) -> NSCursor {
+        guard imageRect.contains(viewPoint) else { return .arrow }
+        if tool == .text { return textIndex(at: viewPoint) != nil ? .openHand : .iBeam }
+        if let cursor = cursors[tool] { return cursor }
+        let cursor = makeCursor(tool)
+        cursors[tool] = cursor
+        return cursor
+    }
+
+    private func updateCursor() {
+        guard let window else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard bounds.contains(point) else { return }
+        cursor(at: point).set()
+    }
+
+    private func makeCursor(_ tool: AnnotationTool) -> NSCursor {
+        let sizeConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .semibold)
+        guard let symbol = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title)?.withSymbolConfiguration(sizeConfiguration) else { return .crosshair }
+        guard let white = symbol.withSymbolConfiguration(sizeConfiguration.applying(.init(paletteColors: [.white]))), let black = symbol.withSymbolConfiguration(sizeConfiguration.applying(.init(paletteColors: [.black]))) else { return .crosshair }
+        guard let representation = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 48, pixelsHigh: 48, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bitmapFormat: [], bytesPerRow: 0, bitsPerPixel: 0) else { return .crosshair }
+        representation.size = CGSize(width: 24, height: 24)
+        let context = NSGraphicsContext(bitmapImageRep: representation)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        let glyphRect = CGRect(x: 4, y: 4, width: 16, height: 16)
+        for offset in [CGPoint(x: -1, y: -1), CGPoint(x: 0, y: -1), CGPoint(x: 1, y: -1), CGPoint(x: -1, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: -1, y: 1), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1)] {
+            white.draw(in: glyphRect.offsetBy(dx: offset.x, dy: offset.y), from: .zero, operation: .sourceOver, fraction: 1)
+        }
+        black.draw(in: glyphRect, from: .zero, operation: .sourceOver, fraction: 1)
+        context?.flushGraphics()
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: CGSize(width: 24, height: 24))
+        image.addRepresentation(representation)
+        // NSCursor hotspot uses flipped top-left coordinates.
+        let hotSpot: NSPoint = tool == .pen || tool == .highlighter ? NSPoint(x: 4, y: 20) : NSPoint(x: 12, y: 12)
+        return NSCursor(image: image, hotSpot: hotSpot)
+    }
 
     override func keyDown(with event: NSEvent) {
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
@@ -115,6 +169,7 @@ final class EditorCanvas: NSView {
     func setTool(_ tool: AnnotationTool) {
         self.tool = tool
         window?.makeFirstResponder(self)
+        updateCursor()
     }
 
     func setColor(_ color: NSColor) {
@@ -210,6 +265,7 @@ final class EditorCanvas: NSView {
             let viewPoint = convert(event.locationInWindow, from: nil)
             if let index = textIndex(at: viewPoint) {
                 movingText = (index, point, false)
+                NSCursor.closedHand.set()
                 return
             }
             textHandler?(point)
@@ -257,6 +313,7 @@ final class EditorCanvas: NSView {
     override func mouseUp(with event: NSEvent) {
         if movingText != nil {
             movingText = nil
+            updateCursor()
             return
         }
         guard let start = dragStart, let current = dragCurrent else { return }
