@@ -2,67 +2,43 @@
 
 # Snipzy
 
-Snipzy is a small macOS menu bar screenshot tool. Press `Cmd-Shift-4`, select
-an area, annotate it, then copy or save the result.
+macOS menu bar screenshot tool. Capture a region, annotate it, then copy or
+save the result.
+
+[Watch the demo](docs/assets/demo_0-1-1.mp4)
 
 ## Requirements
 
 - macOS 14 or newer
-- Swift 6 toolchain
+- Swift 6 toolchain for local builds
 - Screen Recording permission
-
-Snipzy currently delegates capture to `/usr/sbin/screencapture`. Its capture
-command is:
-
-```text
-/usr/sbin/screencapture -i -s -x -d /tmp/snipzy-<uuid>.png
-```
-
-The `-i -s -x -d` flags mean interactive selection, selection-only mode, no
-capture sound, and native graphical error reporting. The output path is a temporary
-PNG removed after it is loaded. Escape cancellation produces no editor and keeps
-existing clipboard contents unchanged.
-
-Because Snipzy intentionally uses macOS's existing shortcut, disable `Cmd-Shift-4`
-in `System Settings > Keyboard > Keyboard Shortcuts > Screenshots` after launch.
-
-## Permissions
-
-Grant `Screen Recording` to Snipzy in `System Settings > Privacy & Security >
-Screen Recording`. When running with `make run`, grant that permission to the
-terminal or IDE that owns the process. Restart the process after changing the
-permission.
-
-Unsigned local builds may need permission re-granted after rebuilding. Bundle
-uses stable identifier `com.epulla.snipzy` and ad-hoc signing only.
-
-The current Carbon global hotkey implementation does not require Accessibility
-permission. macOS may still show different prompts depending on how the app is
-launched or managed.
 
 ## Install
 
-Download `Snipzy-<version>.zip` from
-[Releases](https://github.com/epulla/snipzy/releases), unzip it, and move
-`Snipzy.app` to `/Applications`.
+Download the latest ZIP from [Releases](https://github.com/epulla/snipzy/releases),
+unzip it, and move `Snipzy.app` to `/Applications`.
 
-Release builds are universal (Apple Silicon + Intel), ad-hoc signed, and not
-notarized, so Gatekeeper blocks first launch. Right-click the app and choose
-Open. On macOS 15+, this may be replaced by `System Settings > Privacy &
-Security > Open Anyway`. Alternatively, run:
+Release builds are ad-hoc signed and not notarized. On first launch, Control-click
+`Snipzy.app`, choose **Open**, and confirm. macOS may instead show **Open Anyway**
+under **System Settings > Privacy & Security**.
 
-```sh
-xattr -d com.apple.quarantine /Applications/Snipzy.app
-```
+## Setup
 
-Optional checksum:
+Grant Screen Recording permission in `System Settings > Privacy & Security >
+Screen Recording`. For `make run`, grant permission to the terminal or IDE running
+Snipzy, then restart it after changing permission.
 
-```sh
-shasum -a 256 -c Snipzy-<version>.zip.sha256
-```
+Snipzy uses `Cmd-Shift-4`. Disable macOS's default shortcut in `System Settings >
+Keyboard > Keyboard Shortcuts > Screenshots` so Snipzy can receive it.
 
-Screen Recording permission may need re-granting after each update because the
-ad-hoc signature changes.
+## Use
+
+1. Press `Cmd-Shift-4` and select an area.
+2. Edit the capture with the annotation tools.
+3. Copy the image or save it as PNG.
+
+For OCR, press `O` or click the eye button, then select text. OCR runs on-device;
+edit or copy its result from the popover.
 
 ## Build
 
@@ -73,71 +49,10 @@ make bundle
 open dist/Snipzy.app
 ```
 
-`make test` uses Swift Testing, which ships with Command Line Tools; the Makefile
-adds the Command Line Tools framework search path that SwiftPM omits, so run
-`make test` rather than bare `swift test` when Xcode is not installed.
+`make bundle` creates `dist/Snipzy.app`. Use `make run` to launch the development
+build directly.
 
-`make bundle` builds a release executable and creates `dist/Snipzy.app` without
-changing `Resources/Info.plist`. The bundler resolves paths from its own
-location, so it can run from any working directory. Override `APP_PATH` or
-`DIST_DIR` when a different output location is needed. `bundle.sh` also accepts
-`ARCHS="arm64 x86_64"`, `APP_VERSION`, and `BUILD_NUMBER`; the version and build
-number stamp the bundled `Info.plist` copy only, while `Resources/Info.plist`
-is unchanged.
+## More
 
-## Release
-
-Pushing a `v*` tag runs `.github/workflows/release.yml`. It tests, builds a
-universal bundle stamped with the tag version, and publishes a GitHub Release
-with the zip, sha256, and auto-generated notes.
-
-```sh
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-## OCR
-
-Press `O` or click the eye button in the editor. Drag a rectangle to read that
-region, or click without dragging to read the whole image. Recognition runs
-on-device with Apple Vision (automatic language detection) and needs no extra
-permission. Results appear in an editable popover; text reaches the clipboard
-only when you click Copy Text. The dashed selection is never included in copied
-or saved images. Small or low-resolution text may read poorly.
-
-## Manual Tests
-
-Run these on a real macOS desktop:
-
-1. Launch `dist/Snipzy.app`; confirm scissors icon appears in the menu bar.
-2. Press `Cmd-Shift-4`, select an area, and confirm editor opens with captured image.
-3. Open menu `Capture Selection` and confirm it starts another selection.
-4. Exercise pen, highlighter, arrow, rectangle, ellipse, text, and pixelate tools.
-5. Verify `Undo` and `Redo`, then `Copy` into an image-capable app.
-6. Use `Save`, choose a PNG path, and verify file opens with annotations.
-7. Cancel selection and verify app remains usable; missing permission should show an error.
-8. Choose `Quit Snipzy` and confirm menu bar item exits.
-9. Inspect bundle metadata with `plutil -p dist/Snipzy.app/Contents/Info.plist`.
-10. Capture text, press `O`, drag over a paragraph, and confirm the popover shows text.
-11. Confirm clipboard still holds the image until `Copy Text`, then paste into TextEdit.
-12. Click without dragging and confirm the whole image is read.
-13. Close the popover and confirm the dashed rectangle is cleared.
-14. Undo after OCR and confirm only real annotations are removed.
-15. Copy or save a PNG and confirm it has no dashed rectangle.
-16. With the editor open, switch to another app and confirm Snipzy appears in the Dock and Cmd-Tab; close the last editor and confirm the Dock icon disappears.
-17. Pick Text, type, press Return, and confirm the text has no background; drag the text with the Text tool and confirm it moves (Undo restores it).
-18. Pick Text, type without pressing Return, click `Copy`, and confirm the pasted image includes the text.
-19. Pick each tool and hover the image: pen/highlighter show their icon cursor and strokes start at the icon tip; other drawing tools show a crosshair; letterbox arrow. Text hovering existing text shows a hand.
-20. Right after capture (without clicking the editor first), hover any toolbar control and confirm a tooltip with its shortcut keycap appears below it within half a second; hovering the `?` button keeps the tooltip inside the window.
-21. Confirm `dist/Snipzy.app` shows the Snipzy icon in Finder and in the Dock while the editor is open.
-22. Click `?` (or press `?`) and confirm the help popover lists every tool and shortcut; click outside to dismiss.
-
-## Current Limits
-
-- Capture depends on the macOS `screencapture` command and its permission behavior.
-- Capture is selection-based; window and display-specific UI are not exposed by Snipzy.
-- Releases are ad-hoc signed; notarization and update delivery are not set up.
-
-See [docs/ROADMAP.md](docs/ROADMAP.md) for planned work and the ScreenCaptureKit
-fallback, and [docs/CROSS_PLATFORM_PLAN.md](docs/CROSS_PLATFORM_PLAN.md) for a
-proposed (undecided) Tauri + React port to Windows and Linux.
+- [Roadmap](docs/ROADMAP.md)
+- [Cross-platform plan](docs/CROSS_PLATFORM_PLAN.md)
