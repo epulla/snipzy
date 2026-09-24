@@ -7,6 +7,7 @@
 - Annotation tools: pen, highlighter, arrow, rectangle, ellipse, text, and pixelate.
 - Undo, redo, clipboard copy, and PNG save.
 - On-device OCR region tool.
+- In-editor help popover (`?`) describing tools and shortcuts.
 - Swift package build and minimal `.app` bundling through `make bundle`.
 
 ## Next
