@@ -4,7 +4,7 @@
 
 - Menu bar app with `Cmd-Shift-4` global hotkey.
 - Interactive area capture through `/usr/sbin/screencapture -i -s -x -d`.
-- Annotation tools: pen, highlighter, arrow, rectangle, ellipse, text, and pixelate.
+- Annotation tools: pen, highlighter, arrow, rectangle, ellipse, text, pixelate, and move.
 - Undo, redo, clipboard copy, and PNG save.
 - On-device OCR region tool.
 - In-editor help popover (`?`) describing tools and shortcuts.

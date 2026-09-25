@@ -140,6 +140,80 @@ struct EditorTests {
         #expect(abs(canvas.annotations[0].start.y - 0.2) < 0.02)
     }
 
+    @Test(arguments: [AnnotationTool.rectangle, .arrow, .pen, .text])
+    func moveToolDragsAnyAnnotation(tool: AnnotationTool) throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let window = try #require(controller.window)
+        let start = CGPoint(x: 0.2, y: 0.2)
+        let end = CGPoint(x: 0.4, y: 0.4)
+        if tool == .text {
+            canvas.addText("move", at: start)
+        } else {
+            canvas.setTool(tool)
+            let downLocation = canvas.convert(canvas.viewPoint(for: start), to: nil)
+            let endLocation = canvas.convert(canvas.viewPoint(for: end), to: nil)
+            let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: downLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            let drag = try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: endLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: endLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            canvas.mouseDown(with: down)
+            canvas.mouseDragged(with: drag)
+            canvas.mouseUp(with: up)
+        }
+        let original = canvas.annotations[0]
+        let hit = tool == .text ? CGPoint(x: start.x + 0.01, y: start.y + 0.01) : CGPoint(x: 0.3, y: 0.3)
+        let destination = CGPoint(x: hit.x + 0.1, y: hit.y + 0.1)
+        canvas.setTool(.move)
+        let downLocation = canvas.convert(canvas.viewPoint(for: hit), to: nil)
+        let endLocation = canvas.convert(canvas.viewPoint(for: destination), to: nil)
+        let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: downLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let drag = try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: endLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: endLocation, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: down)
+        canvas.mouseDragged(with: drag)
+        canvas.mouseUp(with: up)
+
+        let moved = canvas.annotations[0]
+        #expect(abs(moved.start.x - original.start.x - 0.1) < 0.02)
+        #expect(abs(moved.start.y - original.start.y - 0.1) < 0.02)
+        #expect(abs(moved.end.x - original.end.x - 0.1) < 0.02)
+        #expect(abs(moved.end.y - original.end.y - 0.1) < 0.02)
+        if tool == .pen {
+            #expect(moved.points.count == original.points.count)
+            for (point, oldPoint) in zip(moved.points, original.points) {
+                #expect(abs(point.x - oldPoint.x - 0.1) < 0.02)
+                #expect(abs(point.y - oldPoint.y - 0.1) < 0.02)
+            }
+        }
+        canvas.undo()
+        #expect(canvas.annotations[0].start == original.start)
+        #expect(canvas.annotations[0].end == original.end)
+        #expect(canvas.annotations[0].points == original.points)
+    }
+
+    @Test
+    func moveToolDragOnEmptyAreaDoesNotCreateAnnotation() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let window = try #require(controller.window)
+        canvas.setTool(.move)
+        let start = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.1, y: 0.1)), to: nil)
+        let end = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.3, y: 0.3)), to: nil)
+        let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: start, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let drag = try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: end, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: end, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: down)
+        canvas.mouseDragged(with: drag)
+        canvas.mouseUp(with: up)
+
+        #expect(canvas.annotations.isEmpty)
+        #expect(!canvas.annotations.contains { $0.tool == .move })
+    }
+
     @Test
     func cursorFollowsToolAndPosition() throws {
         let controller = EditorWindowController(image: testImage())
@@ -168,6 +242,8 @@ struct EditorTests {
         canvas.addText("x", at: CGPoint(x: 0.2, y: 0.2))
         let point = canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2))
         #expect(canvas.cursor(at: CGPoint(x: point.x + 3, y: point.y + 3)) === NSCursor.openHand)
+        canvas.setTool(.move)
+        #expect(canvas.cursor(at: inside) === NSCursor.openHand)
         #expect(canvas.cursor(at: CGPoint(x: 10, y: 300)) === NSCursor.arrow)
     }
 
@@ -315,7 +391,7 @@ struct EditorTests {
         content.layoutSubtreeIfNeeded()
         let toolbar = try #require(content.subviews.compactMap { $0 as? NSStackView }.first)
         let controls = toolbar.arrangedSubviews.compactMap { $0 as? NSControl }
-        #expect(controls.count == 15)
+        #expect(controls.count == 16)
         #expect(controls.allSatisfy { control in control.trackingAreas.contains { $0.owner === controller && $0.options.contains(.activeAlways) } })
 
         let help = try #require(controls.last)
