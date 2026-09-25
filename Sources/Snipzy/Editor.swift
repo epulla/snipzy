@@ -709,19 +709,25 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         toolbar.addArrangedSubview(widthSlider)
         let spacer = NSView()
         toolbar.addArrangedSubview(spacer)
-        let undo = NSButton(title: "Undo", target: self, action: #selector(undo))
-        let redo = NSButton(title: "Redo", target: self, action: #selector(redo))
-        let copy = NSButton(title: "Copy", target: self, action: #selector(copyImage))
-        let save = NSButton(title: "Save", target: self, action: #selector(saveImage))
-        addTooltip(to: undo, title: "Undo", shortcut: "⌘Z")
-        addTooltip(to: redo, title: "Redo", shortcut: "⇧⌘Z")
-        addTooltip(to: copy, title: "Copy image", shortcut: "⌘C")
-        addTooltip(to: save, title: "Save PNG", shortcut: "⌘S")
+        let actions: [(String, String, String, Selector)] = [
+            ("Undo", "arrow.uturn.backward", "⌘Z", #selector(undo)),
+            ("Redo", "arrow.uturn.forward", "⇧⌘Z", #selector(redo)),
+            ("Copy image", "doc.on.doc", "⌘C", #selector(copyImage)),
+            ("Save PNG", "square.and.arrow.down", "⌘S", #selector(saveImage))
+        ]
+        for (title, symbol, shortcut, action) in actions {
+            let button = NSButton(title: title, target: self, action: action)
+            button.bezelStyle = .texturedRounded
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            button.imagePosition = .imageOnly
+            addTooltip(to: button, title: title, shortcut: shortcut)
+            toolbar.addArrangedSubview(button)
+        }
         helpButton = NSButton(title: "", target: self, action: #selector(toggleHelp))
         helpButton.bezelStyle = .helpButton
         helpButton.setAccessibilityLabel("Help")
         addTooltip(to: helpButton, title: "Help", shortcut: "?")
-        [undo, redo, copy, save, helpButton].forEach { toolbar.addArrangedSubview($0) }
+        toolbar.addArrangedSubview(helpButton)
         contentView.addSubview(toolbar)
         contentView.addSubview(canvas)
         toolbar.translatesAutoresizingMaskIntoConstraints = false
