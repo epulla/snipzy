@@ -396,6 +396,8 @@ struct EditorTests {
         let toolbar = try #require(content.subviews.compactMap { $0 as? NSStackView }.first)
         let controls = toolbar.arrangedSubviews.compactMap { $0 as? NSControl }
         #expect(controls.count == 16)
+        let iconButtons = controls.compactMap { $0 as? NSButton }.dropLast()
+        #expect(iconButtons.allSatisfy { $0.imagePosition == .imageOnly && $0.image?.accessibilityDescription == $0.title })
         #expect(controls.allSatisfy { control in control.trackingAreas.contains { $0.owner === controller && $0.options.contains(.activeAlways) } })
 
         let help = try #require(controls.last)
