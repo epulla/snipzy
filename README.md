@@ -59,4 +59,4 @@ build directly.
 
 ## Dedication
 
-Dedicated to my beloved queen, DSI — [Doménica Soria](https://www.linkedin.com/in/dom%C3%A9nica-soria-40bb12184/).
+Dedicated to my beloved queen, [Doménica Soria](https://www.linkedin.com/in/dom%C3%A9nica-soria-40bb12184/).

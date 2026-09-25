@@ -300,7 +300,11 @@ struct EditorTests {
         let help = HelpViewController()
         help.loadViewIfNeeded()
 
-        let link = try #require(help.view.subviews.compactMap { $0 as? NSButton }.first { $0.title == "Doménica Soria" })
+        let row = try #require(help.view.subviews.compactMap { $0 as? NSStackView }.first { $0.arrangedSubviews.contains { ($0 as? NSButton)?.title == "Doménica Soria" } })
+        let label = try #require(row.arrangedSubviews.first as? NSTextField)
+        let link = try #require(row.arrangedSubviews.last as? NSButton)
+        #expect(label.stringValue == "Dedicated to my beloved queen,")
+        #expect(link.attributedTitle.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == label.font)
         #expect(link.isEnabled)
         #expect(link.accessibilityLabel() == "Doménica Soria")
         #expect(link.accessibilityRole() == .link)
