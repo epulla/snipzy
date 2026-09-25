@@ -9,6 +9,7 @@ enum AnnotationTool: String, CaseIterable {
     case text
     case pixelate
     case ocr
+    case move
 
     var title: String {
         switch self {
@@ -20,6 +21,7 @@ enum AnnotationTool: String, CaseIterable {
         case .text: return "Text"
         case .pixelate: return "Pixelate"
         case .ocr: return "Read Text"
+        case .move: return "Move"
         }
     }
 
@@ -33,6 +35,7 @@ enum AnnotationTool: String, CaseIterable {
         case .text: return "t"
         case .pixelate: return "b"
         case .ocr: return "o"
+        case .move: return "v"
         }
     }
 
@@ -46,6 +49,7 @@ enum AnnotationTool: String, CaseIterable {
         case .text: return "textformat"
         case .pixelate: return "squareshape.split.3x3"
         case .ocr: return "eye"
+        case .move: return "hand.raised"
         }
     }
 
@@ -59,6 +63,7 @@ enum AnnotationTool: String, CaseIterable {
         case .text: return "Click to type. Drag existing text to move it."
         case .pixelate: return "Drag to hide sensitive areas."
         case .ocr: return "Drag to copy text out of the image."
+        case .move: return "Drag an annotation to move it"
         }
     }
 }
@@ -68,7 +73,7 @@ struct Annotation {
     let tool: AnnotationTool
     var start: CGPoint
     var end: CGPoint
-    let points: [CGPoint]
+    var points: [CGPoint]
     let text: String
     let color: NSColor
     let lineWidth: CGFloat
@@ -88,7 +93,7 @@ final class EditorCanvas: NSView {
     private var dragCurrent: CGPoint?
     private var dragPoints: [CGPoint] = []
     private var constrainDrag = false
-    private var movingText: (index: Int, last: CGPoint, moved: Bool)?
+    private var movingIndex: (index: Int, last: CGPoint, moved: Bool)?
     private var cursors: [AnnotationTool: NSCursor] = [:]
     var textHandler: ((CGPoint) -> Void)?
     var commandHandler: ((EditorCommand) -> Void)?
@@ -124,6 +129,8 @@ final class EditorCanvas: NSView {
     func cursor(at viewPoint: CGPoint) -> NSCursor {
         guard imageRect.contains(viewPoint) else { return .arrow }
         switch tool {
+        case .move:
+            return movingIndex != nil ? .closedHand : .openHand
         case .text:
             return textIndex(at: viewPoint) != nil ? .openHand : .iBeam
         case .pen, .highlighter:
@@ -290,11 +297,18 @@ final class EditorCanvas: NSView {
         if tool == .text {
             let viewPoint = convert(event.locationInWindow, from: nil)
             if let index = textIndex(at: viewPoint) {
-                movingText = (index, point, false)
+                movingIndex = (index, point, false)
                 NSCursor.closedHand.set()
                 return
             }
             textHandler?(point)
+            return
+        }
+        if tool == .move {
+            let viewPoint = convert(event.locationInWindow, from: nil)
+            guard let index = annotationIndex(at: viewPoint) else { return }
+            movingIndex = (index, point, false)
+            NSCursor.closedHand.set()
             return
         }
         let clampedPoint = clamped(point)
@@ -305,27 +319,28 @@ final class EditorCanvas: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        if var movingText {
-            guard annotations.indices.contains(movingText.index), annotations[movingText.index].tool == .text else {
-                self.movingText = nil
+        if var movingIndex {
+            guard annotations.indices.contains(movingIndex.index) else {
+                self.movingIndex = nil
                 return
             }
             let current = normalizedPoint(event.locationInWindow)
-            let delta = CGPoint(x: current.x - movingText.last.x, y: current.y - movingText.last.y)
-            let annotation = annotations[movingText.index]
+            let delta = CGPoint(x: current.x - movingIndex.last.x, y: current.y - movingIndex.last.y)
+            let annotation = annotations[movingIndex.index]
             let nextStart = clamped(CGPoint(x: annotation.start.x + delta.x, y: annotation.start.y + delta.y))
             let effectiveDelta = CGPoint(x: nextStart.x - annotation.start.x, y: nextStart.y - annotation.start.y)
             if effectiveDelta.x != 0 || effectiveDelta.y != 0 {
-                if !movingText.moved {
+                if !movingIndex.moved {
                     recordState()
-                    movingText.moved = true
+                    movingIndex.moved = true
                 }
-                annotations[movingText.index].start = nextStart
-                annotations[movingText.index].end = CGPoint(x: annotation.end.x + effectiveDelta.x, y: annotation.end.y + effectiveDelta.y)
+                annotations[movingIndex.index].start = nextStart
+                annotations[movingIndex.index].end = CGPoint(x: annotation.end.x + effectiveDelta.x, y: annotation.end.y + effectiveDelta.y)
+                annotations[movingIndex.index].points = annotation.points.map { CGPoint(x: $0.x + effectiveDelta.x, y: $0.y + effectiveDelta.y) }
                 needsDisplay = true
             }
-            movingText.last = current
-            self.movingText = movingText
+            movingIndex.last = current
+            self.movingIndex = movingIndex
             return
         }
         guard dragStart != nil else { return }
@@ -337,8 +352,22 @@ final class EditorCanvas: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if movingText != nil {
-            movingText = nil
+        if movingIndex != nil {
+            movingIndex = nil
+            dragStart = nil
+            dragCurrent = nil
+            dragPoints = []
+            constrainDrag = false
+            needsDisplay = true
+            updateCursor()
+            return
+        }
+        if tool == .move {
+            dragStart = nil
+            dragCurrent = nil
+            dragPoints = []
+            constrainDrag = false
+            needsDisplay = true
             updateCursor()
             return
         }
@@ -417,6 +446,30 @@ final class EditorCanvas: NSView {
         return nil
     }
 
+    private func annotationIndex(at viewPoint: CGPoint) -> Int? {
+        let rect = imageRect
+        let scale = rect.width / max(1, image.size.width)
+        for index in annotations.indices.reversed() {
+            let annotation = annotations[index]
+            if annotation.tool == .text {
+                let origin = point(annotation.start, in: rect)
+                let size = NSString(string: annotation.text).size(withAttributes: textAttributes(annotation, scale: scale))
+                if CGRect(origin: origin, size: size).contains(viewPoint) { return index }
+            } else if annotation.tool == .pen || annotation.tool == .highlighter {
+                let points = annotation.points.map { point($0, in: rect) }
+                guard let first = points.first else { continue }
+                let bounds = points.dropFirst().reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+                if bounds.insetBy(dx: -6, dy: -6).contains(viewPoint) { return index }
+            } else {
+                let start = point(annotation.start, in: rect)
+                let end = point(annotation.end, in: rect)
+                let bounds = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)).insetBy(dx: -6, dy: -6)
+                if bounds.contains(viewPoint) { return index }
+            }
+        }
+        return nil
+    }
+
     private func recordState() {
         undoAnnotations.append(annotations)
         redoAnnotations.removeAll()
@@ -479,7 +532,7 @@ final class EditorCanvas: NSView {
             NSString(string: annotation.text).draw(at: start, withAttributes: textAttributes(annotation, scale: renderScale))
         case .pixelate:
             drawPixelation(in: CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y)), imageRect: rect)
-        case .ocr:
+        case .ocr, .move:
             break
         }
     }
