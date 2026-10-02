@@ -376,7 +376,7 @@ final class EditorCanvas: NSView {
         image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
         drawAnnotations(in: rect)
         drawInProgress(in: rect)
-        if let index = selectedTextIndex, annotations.indices.contains(index), index != editingIndex {
+        if tool == .text, let index = selectedTextIndex, annotations.indices.contains(index), annotations[index].tool == .text, index != editingIndex {
             NSColor.controlAccentColor.setStroke()
             let path = NSBezierPath(rect: textRect(annotations[index], in: rect, scale: renderScale).insetBy(dx: -3, dy: -3))
             path.lineWidth = 1.5
@@ -435,8 +435,10 @@ final class EditorCanvas: NSView {
             let nextStart = clamped(CGPoint(x: annotation.start.x + delta.x, y: annotation.start.y + delta.y))
             let effectiveDelta = CGPoint(x: nextStart.x - annotation.start.x, y: nextStart.y - annotation.start.y)
             if effectiveDelta.x != 0 || effectiveDelta.y != 0 {
-                selectedTextIndex = movingIndex.index
-                textSelectionHandler?(movingIndex.index)
+                if tool == .text {
+                    selectedTextIndex = movingIndex.index
+                    textSelectionHandler?(movingIndex.index)
+                }
                 if !movingIndex.moved {
                     recordState()
                     movingIndex.moved = true

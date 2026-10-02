@@ -226,6 +226,30 @@ struct EditorTests {
     }
 
     @Test
+    func movingRectangleDoesNotSelectText() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let window = try #require(controller.window)
+        canvas.setTool(.rectangle)
+        let start = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2)), to: nil)
+        let end = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.4, y: 0.4)), to: nil)
+        canvas.mouseDown(with: try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: start, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+        canvas.mouseDragged(with: try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: end, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+        canvas.mouseUp(with: try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: end, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+
+        canvas.setTool(.move)
+        let moveStart = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.3, y: 0.3)), to: nil)
+        let moveEnd = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.5, y: 0.5)), to: nil)
+        canvas.mouseDown(with: try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: moveStart, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+        canvas.mouseDragged(with: try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: moveEnd, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+        canvas.mouseUp(with: try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: moveEnd, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+
+        #expect(canvas.selectedTextIndex == nil)
+    }
+
+    @Test
     func moveToolDragOnEmptyAreaDoesNotCreateAnnotation() throws {
         let controller = EditorWindowController(image: testImage())
         let canvas = try canvas(of: controller)
