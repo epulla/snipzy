@@ -464,8 +464,121 @@ struct EditorTests {
         #expect(canvas.annotations.last?.fontSize == 40)
     }
 
+    @Test
+    func textClickSelectsAndSecondClickEdits() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.addText("hello", at: CGPoint(x: 0.2, y: 0.2))
+        canvas.setTool(.text)
+        try click(canvas, at: CGPoint(x: 0.2, y: 0.2))
+        #expect(canvas.selectedTextIndex == 0)
+        #expect(canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
+        try click(canvas, at: CGPoint(x: 0.2, y: 0.2))
+        #expect(canvas.subviews.compactMap { $0 as? NSTextField }.first?.stringValue == "hello")
+    }
+
+    @Test
+    func dragOnSelectedTextMovesWithoutEditing() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.addText("hello", at: CGPoint(x: 0.2, y: 0.2))
+        canvas.setTool(.text)
+        try click(canvas, at: CGPoint(x: 0.2, y: 0.2))
+        let window = try #require(controller.window)
+        let start = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2)), to: nil)
+        let end = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.5, y: 0.5)), to: nil)
+        canvas.mouseDown(with: try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: start, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+        canvas.mouseDragged(with: try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: end, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+        canvas.mouseUp(with: try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: end, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)))
+        #expect(abs(canvas.annotations[0].start.x - 0.5) < 0.02)
+        #expect(canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
+    }
+
+    @Test
+    func doubleClickEditsText() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.addText("hello", at: CGPoint(x: 0.2, y: 0.2))
+        canvas.setTool(.text)
+        try click(canvas, at: CGPoint(x: 0.2, y: 0.2), clickCount: 2)
+        #expect(canvas.subviews.compactMap { $0 as? NSTextField }.first?.stringValue == "hello")
+    }
+
+    @Test
+    func editingTextReplacesAndUndoRestores() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.addText("old", at: CGPoint(x: 0.2, y: 0.2))
+        canvas.setTool(.text)
+        try click(canvas, at: CGPoint(x: 0.2, y: 0.2), clickCount: 2)
+        let field = try #require(canvas.subviews.compactMap { $0 as? NSTextField }.first)
+        field.stringValue = "new"
+        _ = field.delegate?.control?(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        #expect(canvas.annotations[0].text == "new")
+        canvas.undo()
+        #expect(canvas.annotations[0].text == "old")
+    }
+
+    @Test
+    func editingEmptyTextRemovesAndUndoRestores() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.addText("old", at: CGPoint(x: 0.2, y: 0.2))
+        canvas.setTool(.text)
+        try click(canvas, at: CGPoint(x: 0.2, y: 0.2), clickCount: 2)
+        let field = try #require(canvas.subviews.compactMap { $0 as? NSTextField }.first)
+        field.stringValue = ""
+        _ = field.delegate?.control?(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        #expect(canvas.annotations.isEmpty)
+        canvas.undo()
+        #expect(canvas.annotations[0].text == "old")
+    }
+
+    @Test
+    func selectedTextSizeChangeUpdatesAnnotation() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.addText("hello", at: CGPoint(x: 0.2, y: 0.2))
+        canvas.setTool(.text)
+        try click(canvas, at: CGPoint(x: 0.2, y: 0.2))
+        let toolbar = try #require(controller.window?.contentView?.subviews.compactMap { $0 as? NSStackView }.first)
+        let sizeField = try #require(toolbar.arrangedSubviews.compactMap { $0 as? NSTextField }.first { $0.formatter != nil })
+        sizeField.doubleValue = 44
+        sizeField.sendAction(sizeField.action, to: sizeField.target)
+        #expect(canvas.annotations[0].fontSize == 44)
+    }
+
+    @Test
+    func colorWellUsesMinimalStyle() throws {
+        let controller = EditorWindowController(image: testImage())
+        let toolbar = try #require(controller.window?.contentView?.subviews.compactMap { $0 as? NSStackView }.first)
+        let colorWell = try #require(toolbar.arrangedSubviews.compactMap { $0 as? NSColorWell }.first)
+        #expect(colorWell.colorWellStyle == .minimal)
+    }
+
     private func canvas(of controller: EditorWindowController) throws -> EditorCanvas {
         try #require(controller.window?.contentView?.subviews.compactMap { $0 as? EditorCanvas }.first)
+    }
+
+    private func click(_ canvas: EditorCanvas, at normalized: CGPoint, clickCount: Int = 1) throws {
+        let window = try #require(canvas.window)
+        let location = canvas.convert(canvas.viewPoint(for: normalized), to: nil)
+        let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clickCount, pressure: 1))
+        let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: location, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: clickCount, pressure: 1))
+        canvas.mouseDown(with: down)
+        canvas.mouseUp(with: up)
     }
 
     private func runOCR(result: Result<String, StubError>) async throws -> (EditorWindowController, RecordingPasteboard) {

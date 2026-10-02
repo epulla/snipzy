@@ -79,8 +79,8 @@ struct Annotation {
     var start: CGPoint
     var end: CGPoint
     var points: [CGPoint]
-    let text: String
-    let color: NSColor
+    var text: String
+    var color: NSColor
     let lineWidth: CGFloat
     var fontSize: CGFloat = 22
 }
@@ -116,6 +116,9 @@ final class EditorCanvas: NSView {
     private let image: NSImage
     private let bitmap: NSBitmapImageRep?
     private(set) var tool: AnnotationTool = .pen
+    private(set) var selectedTextIndex: Int?
+    private var editingIndex: Int?
+    private var editOnRelease = false
     private var strokeColor: NSColor = .systemRed
     private var strokeWidth: CGFloat = 3
     private(set) var textSize: CGFloat = 22
@@ -128,6 +131,8 @@ final class EditorCanvas: NSView {
     private var movingIndex: (index: Int, last: CGPoint, moved: Bool)?
     private var cursors: [AnnotationTool: NSCursor] = [:]
     var textHandler: ((CGPoint) -> Void)?
+    var editTextHandler: ((Int) -> Void)?
+    var textSelectionHandler: ((Int?) -> Void)?
     var commandHandler: ((EditorCommand) -> Void)?
     var ocrHandler: ((CGRect) -> Void)?
     private(set) var ocrSelection: CGRect?
@@ -237,12 +242,16 @@ final class EditorCanvas: NSView {
 
     func setTool(_ tool: AnnotationTool) {
         self.tool = tool
+        selectedTextIndex = nil
+        editingIndex = nil
+        textSelectionHandler?(nil)
         window?.makeFirstResponder(self)
         updateCursor()
     }
 
     func setColor(_ color: NSColor) {
         strokeColor = color
+        if editingIndex == nil, let index = selectedTextIndex { updateText(at: index, color: color, fontSize: nil) }
     }
 
     var currentColor: NSColor { strokeColor }
@@ -266,6 +275,12 @@ final class EditorCanvas: NSView {
 
     func setTextSize(_ size: CGFloat) {
         textSize = min(200, max(6, size))
+        if editingIndex == nil, let index = selectedTextIndex { updateText(at: index, color: nil, fontSize: textSize) }
+    }
+
+    func setTextStyle(fontSize: CGFloat, color: NSColor) {
+        textSize = min(200, max(6, fontSize))
+        strokeColor = color
     }
 
     var renderScale: CGFloat { imageRect.width / max(1, image.size.width) }
@@ -274,6 +289,9 @@ final class EditorCanvas: NSView {
         guard let previous = undoAnnotations.popLast() else { return }
         redoAnnotations.append(annotations)
         annotations = previous
+        selectedTextIndex = nil
+        editingIndex = nil
+        textSelectionHandler?(nil)
         needsDisplay = true
     }
 
@@ -281,6 +299,9 @@ final class EditorCanvas: NSView {
         guard let next = redoAnnotations.popLast() else { return }
         undoAnnotations.append(annotations)
         annotations = next
+        selectedTextIndex = nil
+        editingIndex = nil
+        textSelectionHandler?(nil)
         needsDisplay = true
     }
 
@@ -288,6 +309,32 @@ final class EditorCanvas: NSView {
         guard !text.isEmpty else { return }
         recordState()
         annotations.append(Annotation(tool: .text, start: point, end: point, points: [], text: text, color: strokeColor, lineWidth: strokeWidth, fontSize: textSize))
+        needsDisplay = true
+    }
+
+    func updateText(at index: Int, text: String? = nil, color: NSColor? = nil, fontSize: CGFloat? = nil) {
+        guard annotations.indices.contains(index) else { return }
+        recordState()
+        if let text { annotations[index].text = text }
+        if let color { annotations[index].color = color }
+        if let fontSize { annotations[index].fontSize = fontSize }
+        needsDisplay = true
+    }
+
+    private func beginEditing(_ index: Int) {
+        selectedTextIndex = index
+        editingIndex = index
+        textSelectionHandler?(index)
+        editTextHandler?(index)
+        needsDisplay = true
+    }
+
+    func removeAnnotation(at index: Int) {
+        guard annotations.indices.contains(index) else { return }
+        recordState()
+        annotations.remove(at: index)
+        selectedTextIndex = nil
+        textSelectionHandler?(nil)
         needsDisplay = true
     }
 
@@ -329,6 +376,13 @@ final class EditorCanvas: NSView {
         image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
         drawAnnotations(in: rect)
         drawInProgress(in: rect)
+        if let index = selectedTextIndex, annotations.indices.contains(index), index != editingIndex {
+            NSColor.controlAccentColor.setStroke()
+            let path = NSBezierPath(rect: textRect(annotations[index], in: rect, scale: renderScale).insetBy(dx: -3, dy: -3))
+            path.lineWidth = 1.5
+            path.setLineDash([6, 4], count: 2, phase: 0)
+            path.stroke()
+        }
         if let ocrSelection { strokeOCRRect(ocrSelection, in: rect) }
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -339,10 +393,19 @@ final class EditorCanvas: NSView {
         if tool == .text {
             let viewPoint = convert(event.locationInWindow, from: nil)
             if let index = textIndex(at: viewPoint) {
+                if event.clickCount == 2 {
+                    beginEditing(index)
+                    return
+                }
+                editOnRelease = selectedTextIndex == index
+                selectedTextIndex = index
+                textSelectionHandler?(index)
                 movingIndex = (index, point, false)
                 NSCursor.closedHand.set()
                 return
             }
+            selectedTextIndex = nil
+            textSelectionHandler?(nil)
             textHandler?(point)
             return
         }
@@ -372,6 +435,8 @@ final class EditorCanvas: NSView {
             let nextStart = clamped(CGPoint(x: annotation.start.x + delta.x, y: annotation.start.y + delta.y))
             let effectiveDelta = CGPoint(x: nextStart.x - annotation.start.x, y: nextStart.y - annotation.start.y)
             if effectiveDelta.x != 0 || effectiveDelta.y != 0 {
+                selectedTextIndex = movingIndex.index
+                textSelectionHandler?(movingIndex.index)
                 if !movingIndex.moved {
                     recordState()
                     movingIndex.moved = true
@@ -394,8 +459,10 @@ final class EditorCanvas: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if movingIndex != nil {
+        if let moving = movingIndex {
             movingIndex = nil
+            if editOnRelease, !moving.moved { beginEditing(moving.index) }
+            editOnRelease = false
             dragStart = nil
             dragCurrent = nil
             dragPoints = []
@@ -481,9 +548,7 @@ final class EditorCanvas: NSView {
         for index in annotations.indices.reversed() {
             let annotation = annotations[index]
             guard annotation.tool == .text else { continue }
-            let origin = point(annotation.start, in: rect)
-            let size = NSString(string: annotation.text).size(withAttributes: textAttributes(annotation, scale: scale))
-            if CGRect(origin: origin, size: size).contains(viewPoint) { return index }
+            if textRect(annotation, in: rect, scale: scale).contains(viewPoint) { return index }
         }
         return nil
     }
@@ -494,9 +559,7 @@ final class EditorCanvas: NSView {
         for index in annotations.indices.reversed() {
             let annotation = annotations[index]
             if annotation.tool == .text {
-                let origin = point(annotation.start, in: rect)
-                let size = NSString(string: annotation.text).size(withAttributes: textAttributes(annotation, scale: scale))
-                if CGRect(origin: origin, size: size).contains(viewPoint) { return index }
+                if textRect(annotation, in: rect, scale: scale).contains(viewPoint) { return index }
             } else if annotation.tool == .pen || annotation.tool == .highlighter {
                 let points = annotation.points.map { point($0, in: rect) }
                 guard let first = points.first else { continue }
@@ -515,6 +578,12 @@ final class EditorCanvas: NSView {
     private func recordState() {
         undoAnnotations.append(annotations)
         redoAnnotations.removeAll()
+    }
+
+    private func textRect(_ annotation: Annotation, in rect: CGRect, scale: CGFloat) -> CGRect {
+        let origin = point(annotation.start, in: rect)
+        let size = NSString(string: annotation.text).size(withAttributes: textAttributes(annotation, scale: scale))
+        return CGRect(origin: origin, size: size)
     }
 
     private func drawInProgress(in rect: CGRect) {
@@ -540,7 +609,7 @@ final class EditorCanvas: NSView {
     }
 
     private func drawAnnotations(in rect: CGRect) {
-        for annotation in annotations { draw(annotation, in: rect) }
+        for (index, annotation) in annotations.enumerated() where index != editingIndex { draw(annotation, in: rect) }
     }
 
     private func draw(_ annotation: Annotation, in rect: CGRect) {
@@ -631,7 +700,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private let canvas: EditorCanvas
     private let pasteboard: any ImagePasting
     private let recognizer: any TextRecognizing
-    private var pendingText: (field: NSTextField, point: CGPoint)?
+    private var pendingText: (field: NSTextField, point: CGPoint, index: Int?)?
     private(set) var ocrTask: Task<Void, Never>?
     private(set) var ocrResult: OCRResultViewController?
     private(set) var helpPopover: NSPopover?
@@ -639,6 +708,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private(set) var colorDots: [ColorDot] = []
     private var textSizeField: NSTextField!
     private var textSizeStepper: NSStepper!
+    private var colorWell: NSColorWell!
     private var popover: NSPopover?
     private var tooltipTargets: [ObjectIdentifier: (view: NSView, title: String, shortcut: String?)] = [:]
     private var tooltipTask: Task<Void, Never>?
@@ -656,6 +726,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         window.delegate = self
         buildView()
         canvas.textHandler = { [weak self] point in self?.requestText(at: point) }
+        canvas.editTextHandler = { [weak self] index in self?.editText(at: index) }
+        canvas.textSelectionHandler = { [weak self] index in self?.selectText(at: index) }
         canvas.ocrHandler = { [weak self] region in self?.recognizeText(in: region) }
         canvas.commandHandler = { [weak self] command in
             switch command {
@@ -755,7 +827,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
                 toolbar.addArrangedSubview(separator)
             }
         }
-        let colorWell = NSColorWell()
+        colorWell = NSColorWell()
+        colorWell.colorWellStyle = .minimal
         colorWell.color = canvas.currentColor
         colorWell.target = self
         colorWell.action = #selector(changeColor(_:))
@@ -900,6 +973,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
 
     @objc private func changeColor(_ sender: NSColorWell) {
         canvas.setColor(sender.color)
+        pendingText?.field.textColor = sender.color
         colorDots.forEach { $0.color = sender.color }
     }
 
@@ -976,9 +1050,37 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         field.drawsBackground = false
         field.isEditable = true
         field.delegate = self
-        pendingText = (field, point)
+        pendingText = (field, point, nil)
         canvas.addSubview(field)
         window?.makeFirstResponder(field)
+    }
+
+    private func editText(at index: Int) {
+        guard pendingText == nil, canvas.annotations.indices.contains(index) else { return }
+        let annotation = canvas.annotations[index]
+        let field = NSTextField(frame: .zero)
+        field.stringValue = annotation.text
+        canvas.setTextStyle(fontSize: annotation.fontSize, color: annotation.color)
+        updateTextField(field, point: annotation.start)
+        field.textColor = annotation.color
+        field.isBezeled = false
+        field.isBordered = false
+        field.drawsBackground = false
+        field.isEditable = true
+        field.delegate = self
+        pendingText = (field, annotation.start, index)
+        canvas.addSubview(field)
+        window?.makeFirstResponder(field)
+    }
+
+    private func selectText(at index: Int?) {
+        guard let index, canvas.annotations.indices.contains(index) else { return }
+        let annotation = canvas.annotations[index]
+        canvas.setTextStyle(fontSize: annotation.fontSize, color: annotation.color)
+        colorWell.color = annotation.color
+        colorDots.forEach { $0.color = annotation.color }
+        textSizeField.doubleValue = annotation.fontSize
+        textSizeStepper.doubleValue = annotation.fontSize
     }
 
     private func updateTextField(_ field: NSTextField, point: CGPoint? = nil) {
@@ -1009,7 +1111,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private func finishText(commit: Bool) {
         guard let pending = pendingText else { return }
         pendingText = nil
-        if commit { canvas.addText(pending.field.stringValue, at: pending.point) }
+        if let index = pending.index {
+            if commit, pending.field.stringValue.isEmpty {
+                canvas.removeAnnotation(at: index)
+            } else if commit {
+                canvas.updateText(at: index, text: pending.field.stringValue, color: pending.field.textColor, fontSize: canvas.textSize)
+            }
+            canvas.setTool(.text)
+        } else if commit { canvas.addText(pending.field.stringValue, at: pending.point) }
         pending.field.removeFromSuperview()
         window?.makeFirstResponder(canvas)
     }
