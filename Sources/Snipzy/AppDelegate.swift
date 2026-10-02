@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let pasteboard = SystemPasteboard()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = Self.makeMainMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "Snipzy")
         statusItem.button?.toolTip = "Snipzy: Cmd-Shift-4 to capture"
@@ -25,6 +26,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             showError(error)
         }
+    }
+
+    static func makeMainMenu() -> NSMenu {
+        let menu = NSMenu()
+        let appMenu = NSMenu(title: "Snipzy")
+        let quit = appMenu.addItem(withTitle: "Quit Snipzy", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        quit.target = NSApp
+        menu.addItem(withTitle: "Snipzy", action: nil, keyEquivalent: "").submenu = appMenu
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = NSEvent.ModifierFlags.command.union(.shift)
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        menu.addItem(withTitle: "Edit", action: nil, keyEquivalent: "").submenu = editMenu
+        return menu
     }
 
     func applicationWillTerminate(_ notification: Notification) {
