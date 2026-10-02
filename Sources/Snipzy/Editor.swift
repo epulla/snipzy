@@ -1,69 +1,74 @@
 import AppKit
 
 enum AnnotationTool: String, CaseIterable {
+    case move
     case pen
     case highlighter
+    case line
     case arrow
     case rectangle
     case ellipse
     case text
     case pixelate
     case ocr
-    case move
 
     var title: String {
         switch self {
+        case .move: return "Move"
         case .pen: return "Pen"
         case .highlighter: return "Highlight"
+        case .line: return "Line"
         case .arrow: return "Arrow"
         case .rectangle: return "Rectangle"
         case .ellipse: return "Ellipse"
         case .text: return "Text"
         case .pixelate: return "Pixelate"
         case .ocr: return "Read Text"
-        case .move: return "Move"
         }
     }
 
     var shortcut: String {
         switch self {
+        case .move: return "v"
         case .pen: return "p"
         case .highlighter: return "h"
+        case .line: return "l"
         case .arrow: return "a"
         case .rectangle: return "r"
         case .ellipse: return "e"
         case .text: return "t"
         case .pixelate: return "b"
         case .ocr: return "o"
-        case .move: return "v"
         }
     }
 
     var symbolName: String {
         switch self {
+        case .move: return "hand.raised"
         case .pen: return "pencil.tip"
         case .highlighter: return "highlighter"
+        case .line: return "line.diagonal"
         case .arrow: return "arrow.up.right"
         case .rectangle: return "rectangle"
         case .ellipse: return "circle"
         case .text: return "textformat"
         case .pixelate: return "squareshape.split.3x3"
         case .ocr: return "eye"
-        case .move: return "hand.raised"
         }
     }
 
     var helpText: String {
         switch self {
+        case .move: return "Drag an annotation to move it"
         case .pen: return "Draw freehand."
         case .highlighter: return "Translucent marker for emphasis."
+        case .line: return "Drag a straight line."
         case .arrow: return "Drag to point at something."
         case .rectangle: return "Drag a box. Hold Shift for a square."
         case .ellipse: return "Drag an oval. Hold Shift for a circle."
         case .text: return "Click to type. Drag existing text to move it."
         case .pixelate: return "Drag to hide sensitive areas."
         case .ocr: return "Drag to copy text out of the image."
-        case .move: return "Drag an annotation to move it"
         }
     }
 }
@@ -77,6 +82,32 @@ struct Annotation {
     let text: String
     let color: NSColor
     let lineWidth: CGFloat
+    var fontSize: CGFloat = 22
+}
+
+final class HoverButton: NSButton {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+final class ColorDot: NSView {
+    let diameter: CGFloat
+    var color: NSColor = .systemRed { didSet { needsDisplay = true } }
+
+    init(diameter: CGFloat) {
+        self.diameter = diameter
+        super.init(frame: .zero)
+        widthAnchor.constraint(equalToConstant: diameter).isActive = true
+        heightAnchor.constraint(equalToConstant: diameter).isActive = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        color.setFill()
+        NSBezierPath(ovalIn: bounds).fill()
+    }
 }
 
 @MainActor
@@ -87,6 +118,7 @@ final class EditorCanvas: NSView {
     private(set) var tool: AnnotationTool = .pen
     private var strokeColor: NSColor = .systemRed
     private var strokeWidth: CGFloat = 3
+    private(set) var textSize: CGFloat = 22
     private var undoAnnotations: [[Annotation]] = []
     private var redoAnnotations: [[Annotation]] = []
     private var dragStart: CGPoint?
@@ -133,12 +165,12 @@ final class EditorCanvas: NSView {
             return movingIndex != nil ? .closedHand : .openHand
         case .text:
             return textIndex(at: viewPoint) != nil ? .openHand : .iBeam
-        case .pen, .highlighter:
+        case .pen:
             if let cursor = cursors[tool] { return cursor }
             let cursor = makeCursor(tool)
             cursors[tool] = cursor
             return cursor
-        case .arrow, .rectangle, .ellipse, .pixelate, .ocr:
+        case .highlighter, .line, .arrow, .rectangle, .ellipse, .pixelate, .ocr:
             return .crosshair
         }
     }
@@ -172,7 +204,7 @@ final class EditorCanvas: NSView {
         let image = NSImage(size: CGSize(width: 24, height: 24))
         image.addRepresentation(representation)
         // Tips measured from 16pt semibold SF Symbol art; test guards drift.
-        let hotSpot = tool == .pen ? NSPoint(x: 11.5, y: 5.5) : NSPoint(x: 6, y: 16.5)
+        let hotSpot = NSPoint(x: 11.5, y: 5.5)
         return NSCursor(image: image, hotSpot: hotSpot)
     }
 
@@ -198,6 +230,10 @@ final class EditorCanvas: NSView {
         }
         super.keyDown(with: event)
     }
+
+    @objc func undo(_ sender: Any?) { commandHandler?(.undo) }
+    @objc func redo(_ sender: Any?) { commandHandler?(.redo) }
+    @objc func copy(_ sender: Any?) { commandHandler?(.copy) }
 
     func setTool(_ tool: AnnotationTool) {
         self.tool = tool
@@ -228,6 +264,12 @@ final class EditorCanvas: NSView {
         strokeWidth = max(1, width)
     }
 
+    func setTextSize(_ size: CGFloat) {
+        textSize = min(200, max(6, size))
+    }
+
+    var renderScale: CGFloat { imageRect.width / max(1, image.size.width) }
+
     func undo() {
         guard let previous = undoAnnotations.popLast() else { return }
         redoAnnotations.append(annotations)
@@ -245,7 +287,7 @@ final class EditorCanvas: NSView {
     func addText(_ text: String, at point: CGPoint) {
         guard !text.isEmpty else { return }
         recordState()
-        annotations.append(Annotation(tool: .text, start: point, end: point, points: [], text: text, color: strokeColor, lineWidth: strokeWidth))
+        annotations.append(Annotation(tool: .text, start: point, end: point, points: [], text: text, color: strokeColor, lineWidth: strokeWidth, fontSize: textSize))
         needsDisplay = true
     }
 
@@ -430,12 +472,12 @@ final class EditorCanvas: NSView {
     }
 
     private func textAttributes(_ annotation: Annotation, scale: CGFloat) -> [NSAttributedString.Key: Any] {
-        [.font: NSFont.systemFont(ofSize: max(1, 22 * scale), weight: .bold), .foregroundColor: annotation.color]
+        [.font: NSFont.systemFont(ofSize: max(1, annotation.fontSize * scale), weight: .bold), .foregroundColor: annotation.color]
     }
 
     private func textIndex(at viewPoint: CGPoint) -> Int? {
         let rect = imageRect
-        let scale = rect.width / max(1, image.size.width)
+        let scale = renderScale
         for index in annotations.indices.reversed() {
             let annotation = annotations[index]
             guard annotation.tool == .text else { continue }
@@ -448,7 +490,7 @@ final class EditorCanvas: NSView {
 
     private func annotationIndex(at viewPoint: CGPoint) -> Int? {
         let rect = imageRect
-        let scale = rect.width / max(1, image.size.width)
+        let scale = renderScale
         for index in annotations.indices.reversed() {
             let annotation = annotations[index]
             if annotation.tool == .text {
@@ -513,6 +555,14 @@ final class EditorCanvas: NSView {
             path.move(to: point(first, in: rect))
             for item in annotation.points.dropFirst() { path.line(to: point(item, in: rect)) }
             annotation.color.setStroke()
+            path.lineWidth = lineWidth
+            path.lineCapStyle = .round
+            path.stroke()
+        case .line:
+            annotation.color.setStroke()
+            let path = NSBezierPath()
+            path.move(to: start)
+            path.line(to: end)
             path.lineWidth = lineWidth
             path.lineCapStyle = .round
             path.stroke()
@@ -586,6 +636,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private(set) var ocrResult: OCRResultViewController?
     private(set) var helpPopover: NSPopover?
     private var helpButton: NSButton!
+    private(set) var colorDots: [ColorDot] = []
+    private var textSizeField: NSTextField!
+    private var textSizeStepper: NSStepper!
     private var popover: NSPopover?
     private var tooltipTargets: [ObjectIdentifier: (view: NSView, title: String, shortcut: String?)] = [:]
     private var tooltipTask: Task<Void, Never>?
@@ -686,7 +739,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         toolbar.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         toolbar.distribution = .fill
         for tool in AnnotationTool.allCases {
-            let button = NSButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
+            let button = HoverButton(title: tool.title, target: self, action: #selector(selectTool(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
             button.bezelStyle = .texturedRounded
             if let image = NSImage(systemSymbolName: tool.symbolName, accessibilityDescription: tool.title) {
@@ -695,6 +748,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             }
             addTooltip(to: button, title: tool.title, shortcut: tool.shortcut.uppercased())
             toolbar.addArrangedSubview(button)
+            if [.move, .text, .ocr].contains(tool) {
+                let separator = NSBox()
+                separator.boxType = .separator
+                separator.widthAnchor.constraint(equalToConstant: 1).isActive = true
+                toolbar.addArrangedSubview(separator)
+            }
         }
         let colorWell = NSColorWell()
         colorWell.color = canvas.currentColor
@@ -706,7 +765,35 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         widthSlider.controlSize = .small
         addTooltip(to: widthSlider, title: "Line width")
         widthSlider.widthAnchor.constraint(equalToConstant: 90).isActive = true
+        let leftDot = ColorDot(diameter: 5)
+        let rightDot = ColorDot(diameter: 14)
+        leftDot.color = canvas.currentColor
+        rightDot.color = canvas.currentColor
+        colorDots = [leftDot, rightDot]
+        toolbar.addArrangedSubview(leftDot)
         toolbar.addArrangedSubview(widthSlider)
+        toolbar.addArrangedSubview(rightDot)
+        textSizeField = NSTextField(frame: .zero)
+        textSizeField.doubleValue = 22
+        let textFormatter = NumberFormatter()
+        textFormatter.allowsFloats = false
+        textFormatter.minimum = 6
+        textFormatter.maximum = 200
+        textSizeField.formatter = textFormatter
+        textSizeField.target = self
+        textSizeField.action = #selector(changeTextSize(_:))
+        textSizeField.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        addTooltip(to: textSizeField, title: "Text size")
+        toolbar.addArrangedSubview(textSizeField)
+        textSizeStepper = NSStepper(frame: .zero)
+        textSizeStepper.doubleValue = 22
+        textSizeStepper.minValue = 6
+        textSizeStepper.maxValue = 200
+        textSizeStepper.target = self
+        textSizeStepper.action = #selector(changeTextSize(_:))
+        addTooltip(to: textSizeStepper, title: "Text size")
+        textSizeStepper.increment = 1
+        toolbar.addArrangedSubview(textSizeStepper)
         let spacer = NSView()
         toolbar.addArrangedSubview(spacer)
         let actions: [(String, String, String, Selector)] = [
@@ -716,14 +803,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             ("Save PNG", "square.and.arrow.down", "⌘S", #selector(saveImage))
         ]
         for (title, symbol, shortcut, action) in actions {
-            let button = NSButton(title: title, target: self, action: action)
+            let button = HoverButton(title: title, target: self, action: action)
             button.bezelStyle = .texturedRounded
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             button.imagePosition = .imageOnly
             addTooltip(to: button, title: title, shortcut: shortcut)
             toolbar.addArrangedSubview(button)
         }
-        helpButton = NSButton(title: "", target: self, action: #selector(toggleHelp))
+        helpButton = HoverButton(title: "", target: self, action: #selector(toggleHelp))
         helpButton.bezelStyle = .helpButton
         helpButton.setAccessibilityLabel("Help")
         addTooltip(to: helpButton, title: "Help", shortcut: "?")
@@ -813,10 +900,20 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
 
     @objc private func changeColor(_ sender: NSColorWell) {
         canvas.setColor(sender.color)
+        colorDots.forEach { $0.color = sender.color }
     }
 
     @objc private func changeWidth(_ sender: NSSlider) {
         canvas.setLineWidth(CGFloat(sender.doubleValue))
+    }
+
+    @objc private func changeTextSize(_ sender: NSControl) {
+        canvas.setTextSize(CGFloat(sender.doubleValue))
+        textSizeField.doubleValue = canvas.textSize
+        textSizeStepper.doubleValue = canvas.textSize
+        if let pendingText {
+            updateTextField(pendingText.field)
+        }
     }
 
     @objc private func undo() { canvas.undo() }
@@ -871,8 +968,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
 
     private func requestText(at point: CGPoint) {
         guard pendingText == nil else { return }
-        let field = NSTextField(frame: NSRect(origin: canvas.viewPoint(for: point), size: CGSize(width: 240, height: 30)))
-        field.font = .systemFont(ofSize: 22, weight: .bold)
+        let field = NSTextField(frame: .zero)
+        updateTextField(field, point: point)
         field.textColor = canvas.currentColor
         field.isBezeled = false
         field.isBordered = false
@@ -882,6 +979,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         pendingText = (field, point)
         canvas.addSubview(field)
         window?.makeFirstResponder(field)
+    }
+
+    private func updateTextField(_ field: NSTextField, point: CGPoint? = nil) {
+        field.font = .systemFont(ofSize: canvas.textSize * canvas.renderScale, weight: .bold)
+        let font = field.font ?? .systemFont(ofSize: 12)
+        let height = ceil(font.ascender - font.descender + font.leading) + 4
+        let origin = canvas.viewPoint(for: point ?? pendingText?.point ?? .zero)
+        field.frame = NSRect(x: origin.x - 2, y: origin.y - 2, width: max(240, canvas.bounds.maxX - origin.x), height: height)
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -923,8 +1028,8 @@ final class OCRResultViewController: NSViewController {
 
     init(pasteboard: any ImagePasting) {
         self.pasteboard = pasteboard
-        copyButton = NSButton(title: "Copy Text", target: nil, action: nil)
-        closeButton = NSButton(title: "Close", target: nil, action: nil)
+        copyButton = HoverButton(title: "Copy Text", target: nil, action: nil)
+        closeButton = HoverButton(title: "Close", target: nil, action: nil)
         super.init(nibName: nil, bundle: nil)
         copyButton.target = self
         copyButton.action = #selector(copyText)
@@ -1036,7 +1141,7 @@ final class HelpViewController: NSViewController {
         dedication.font = .systemFont(ofSize: 11)
         dedication.textColor = .secondaryLabelColor
 
-        let link = NSButton(title: "Doménica Soria", target: self, action: #selector(openDedicationLink))
+        let link = HoverButton(title: "Doménica Soria", target: self, action: #selector(openDedicationLink))
         link.bezelStyle = .inline
         link.isBordered = false
         link.attributedTitle = NSAttributedString(string: link.title, attributes: [

@@ -47,6 +47,27 @@ struct EditorTests {
     }
 
     @Test
+    func lineDragCreatesRenderedLine() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let baseline = try #require(canvas.renderedPNGData())
+        canvas.setTool(.line)
+        let window = try #require(controller.window)
+        let start = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2)), to: nil)
+        let end = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.8, y: 0.8)), to: nil)
+        let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: start, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let drag = try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: end, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: end, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: down)
+        canvas.mouseDragged(with: drag)
+        canvas.mouseUp(with: up)
+        #expect(canvas.annotations[0].tool == .line)
+        #expect(canvas.renderedPNGData() != baseline)
+    }
+
+    @Test
     func copyCommandUsesInjectedClipboardWriter() throws {
         let pasteboard = RecordingPasteboard()
         let controller = EditorWindowController(image: testImage(), pasteboard: pasteboard)
@@ -81,6 +102,17 @@ struct EditorTests {
         #expect(canvas.annotations[0].text == "hi")
         #expect(canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
         #expect(pasteboard.pngData != baseline)
+    }
+
+    @Test
+    func canvasCopySelectorUsesInjectedClipboardWriter() throws {
+        let pasteboard = RecordingPasteboard()
+        let controller = EditorWindowController(image: testImage(), pasteboard: pasteboard)
+        let canvas = try canvas(of: controller)
+
+        canvas.copy(nil)
+
+        #expect(pasteboard.writeCount == 1)
     }
 
     @Test
@@ -140,7 +172,7 @@ struct EditorTests {
         #expect(abs(canvas.annotations[0].start.y - 0.2) < 0.02)
     }
 
-    @Test(arguments: [AnnotationTool.rectangle, .arrow, .pen, .text])
+    @Test(arguments: [AnnotationTool.rectangle, .arrow, .line, .pen, .text])
     func moveToolDragsAnyAnnotation(tool: AnnotationTool) throws {
         let controller = EditorWindowController(image: testImage())
         let canvas = try canvas(of: controller)
@@ -228,11 +260,8 @@ struct EditorTests {
         #expect(pen !== NSCursor.arrow)
         #expect(pen !== NSCursor.iBeam)
         #expect(pen !== NSCursor.crosshair)
-        #expect(highlighter !== NSCursor.arrow)
-        #expect(highlighter !== NSCursor.iBeam)
-        #expect(highlighter !== NSCursor.crosshair)
-        #expect(pen !== highlighter)
-        for tool in [AnnotationTool.arrow, .rectangle, .ellipse, .pixelate, .ocr] {
+        #expect(highlighter === NSCursor.crosshair)
+        for tool in [AnnotationTool.highlighter, .line, .arrow, .rectangle, .ellipse, .pixelate, .ocr] {
             canvas.setTool(tool)
             #expect(canvas.cursor(at: inside) === NSCursor.crosshair)
         }
@@ -255,21 +284,14 @@ struct EditorTests {
         controller.window?.contentView?.layoutSubtreeIfNeeded()
         let point = canvas.viewPoint(for: CGPoint(x: 0.5, y: 0.5))
 
-        for tool in [AnnotationTool.pen, .highlighter] {
-            canvas.setTool(tool)
-            let cursor = canvas.cursor(at: point)
-            #expect(cursor.image.size == CGSize(width: 24, height: 24))
-            if tool == .pen {
-                #expect(cursor.hotSpot.y < 12)
-            } else {
-                #expect(cursor.hotSpot.x < 12)
-                #expect(cursor.hotSpot.y > 12)
-            }
-            let representation = try #require(cursor.image.representations.compactMap { $0 as? NSBitmapImageRep }.first)
-            let pixelX = Int(cursor.hotSpot.x * 2)
-            let pixelY = Int(cursor.hotSpot.y * 2)
-            #expect((representation.colorAt(x: pixelX, y: pixelY)?.alphaComponent ?? 0) > 0.5)
-        }
+        canvas.setTool(.pen)
+        let cursor = canvas.cursor(at: point)
+        #expect(cursor.image.size == CGSize(width: 24, height: 24))
+        #expect(cursor.hotSpot.y < 12)
+        let representation = try #require(cursor.image.representations.compactMap { $0 as? NSBitmapImageRep }.first)
+        let pixelX = Int(cursor.hotSpot.x * 2)
+        let pixelY = Int(cursor.hotSpot.y * 2)
+        #expect((representation.colorAt(x: pixelX, y: pixelY)?.alphaComponent ?? 0) > 0.5)
     }
 
     @Test
@@ -395,8 +417,10 @@ struct EditorTests {
         content.layoutSubtreeIfNeeded()
         let toolbar = try #require(content.subviews.compactMap { $0 as? NSStackView }.first)
         let controls = toolbar.arrangedSubviews.compactMap { $0 as? NSControl }
-        #expect(controls.count == 16)
+        #expect(controls.count == 19)
+        #expect((controls.first as? NSButton)?.identifier?.rawValue == "move")
         let iconButtons = controls.compactMap { $0 as? NSButton }.dropLast()
+        #expect(iconButtons.allSatisfy { $0 is HoverButton })
         #expect(iconButtons.allSatisfy { $0.imagePosition == .imageOnly && $0.image?.accessibilityDescription == $0.title })
         #expect(controls.allSatisfy { control in control.trackingAreas.contains { $0.owner === controller && $0.options.contains(.activeAlways) } })
 
@@ -405,6 +429,39 @@ struct EditorTests {
         let tooltip = try #require(controller.tooltip)
         #expect(content.bounds.contains(tooltip.frame))
         #expect(tooltip.frame.maxY <= help.convert(help.bounds, to: content).minY)
+    }
+
+    @Test
+    func colorDotsFollowColorWell() throws {
+        let controller = EditorWindowController(image: testImage())
+        let content = try #require(controller.window?.contentView)
+        let toolbar = try #require(content.subviews.compactMap { $0 as? NSStackView }.first)
+        let colorWell = try #require(toolbar.arrangedSubviews.compactMap { $0 as? NSColorWell }.first)
+        let color = NSColor.systemBlue
+        colorWell.color = color
+        colorWell.sendAction(colorWell.action, to: colorWell.target)
+
+        #expect(controller.colorDots.allSatisfy { $0.color == color })
+    }
+
+    @Test
+    func textSizeControlsUseRenderScaleAndStoreImageSize() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.setTextSize(40)
+        canvas.setTool(.text)
+        let window = try #require(controller.window)
+        let location = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2)), to: nil)
+        let event = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: event)
+        let field = try #require(canvas.subviews.compactMap { $0 as? NSTextField }.first)
+
+        #expect(field.font?.pointSize == canvas.textSize * canvas.renderScale)
+        field.stringValue = "scaled"
+        _ = field.delegate?.control?(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.insertNewline(_:)))
+        #expect(canvas.annotations.last?.fontSize == 40)
     }
 
     private func canvas(of controller: EditorWindowController) throws -> EditorCanvas {
