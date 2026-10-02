@@ -47,6 +47,14 @@ struct EditorTests {
     }
 
     @Test
+    func editorWindowStartsWithCanvasAsInitialFirstResponder() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+
+        #expect(controller.window?.initialFirstResponder === canvas)
+    }
+
+    @Test
     func lineDragCreatesRenderedLine() throws {
         let controller = EditorWindowController(image: testImage())
         let canvas = try canvas(of: controller)

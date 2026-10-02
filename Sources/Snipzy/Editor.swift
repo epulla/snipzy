@@ -727,6 +727,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         super.init(window: window)
         window.delegate = self
         buildView()
+        window.initialFirstResponder = canvas
         canvas.textHandler = { [weak self] point in self?.requestText(at: point) }
         canvas.editTextHandler = { [weak self] index in self?.editText(at: index) }
         canvas.textSelectionHandler = { [weak self] index in self?.selectText(at: index) }
