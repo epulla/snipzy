@@ -55,6 +55,95 @@ struct EditorTests {
     }
 
     @Test
+    func discardButtonClosesEditorAndFiresOnClose() throws {
+        let controller = EditorWindowController(image: testImage())
+        var didClose = false
+        controller.onClose = { _ in didClose = true }
+        controller.showWindow(nil)
+        let window = try #require(controller.window)
+        let contentView = try #require(window.contentView)
+        let toolbar = try #require(contentView.subviews.compactMap { $0 as? NSStackView }.first)
+        let button = try #require(toolbar.arrangedSubviews.compactMap { $0 as? NSButton }.first { $0.title == "Discard" || $0.accessibilityLabel() == "Discard" })
+
+        button.performClick(nil)
+
+        #expect(!window.isVisible)
+        #expect(didClose)
+    }
+
+    @Test
+    func annotatedEditorCloseRequestsDiscardConfirmation() throws {
+        var confirmationCount = 0
+        let controller = EditorWindowController(image: testImage(), confirmDiscard: { _, completion in
+            confirmationCount += 1
+            completion(false)
+        })
+        let canvas = try canvas(of: controller)
+        canvas.addText("annotation", at: CGPoint(x: 0.5, y: 0.5))
+        let window = try #require(controller.window)
+
+        #expect(!controller.windowShouldClose(window))
+        #expect(confirmationCount == 1)
+    }
+
+    @Test
+    func discardInRealSheetClosesWindow() throws {
+        var didClose = false
+        let controller = EditorWindowController(image: testImage())
+        controller.onClose = { _ in
+            didClose = true
+            NSApplication.shared.setActivationPolicy(.accessory)
+        }
+        controller.showWindow(nil)
+        let window = try #require(controller.window)
+        let canvas = try canvas(of: controller)
+        canvas.addText("annotation", at: CGPoint(x: 0.5, y: 0.5))
+
+        window.performClose(nil)
+
+        let sheetDeadline = Date().addingTimeInterval(2)
+        while window.attachedSheet == nil && Date() < sheetDeadline {
+            RunLoop.main.run(until: min(sheetDeadline, Date().addingTimeInterval(0.01)))
+        }
+        let sheet = try #require(window.attachedSheet)
+        let contentView = try #require(sheet.contentView)
+        var views = [contentView]
+        var discardButton: NSButton?
+        while let view = views.popLast() {
+            if let button = view as? NSButton, button.title == "Discard" {
+                discardButton = button
+                break
+            }
+            views.append(contentsOf: view.subviews)
+        }
+        try #require(discardButton).performClick(nil)
+
+        let closeDeadline = Date().addingTimeInterval(2)
+        while window.isVisible && Date() < closeDeadline {
+            RunLoop.main.run(until: min(closeDeadline, Date().addingTimeInterval(0.01)))
+        }
+
+        #expect(!window.isVisible)
+        #expect(didClose)
+    }
+
+    @Test
+    func emptyEditorClosesWithoutDiscardConfirmation() throws {
+        var confirmationCount = 0
+        var didClose = false
+        let controller = EditorWindowController(image: testImage(), confirmDiscard: { _, _ in confirmationCount += 1 })
+        controller.onClose = { _ in didClose = true }
+        controller.showWindow(nil)
+        let window = try #require(controller.window)
+
+        window.performClose(nil)
+
+        #expect(confirmationCount == 0)
+        #expect(!window.isVisible)
+        #expect(didClose)
+    }
+
+    @Test
     func lineDragCreatesRenderedLine() throws {
         let controller = EditorWindowController(image: testImage())
         let canvas = try canvas(of: controller)
@@ -449,7 +538,7 @@ struct EditorTests {
         content.layoutSubtreeIfNeeded()
         let toolbar = try #require(content.subviews.compactMap { $0 as? NSStackView }.first)
         let controls = toolbar.arrangedSubviews.compactMap { $0 as? NSControl }
-        #expect(controls.count == 19)
+        #expect(controls.count == 20)
         #expect((controls.first as? NSButton)?.identifier?.rawValue == "move")
         let iconButtons = controls.compactMap { $0 as? NSButton }.dropLast()
         #expect(iconButtons.allSatisfy { $0 is HoverButton })
