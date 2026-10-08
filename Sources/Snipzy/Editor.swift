@@ -876,7 +876,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             ("Undo", "arrow.uturn.backward", "⌘Z", #selector(undo)),
             ("Redo", "arrow.uturn.forward", "⇧⌘Z", #selector(redo)),
             ("Copy image", "doc.on.doc", "⌘C", #selector(copyImage)),
-            ("Save PNG", "square.and.arrow.down", "⌘S", #selector(saveImage))
+            ("Save PNG", "square.and.arrow.down", "⌘S", #selector(saveImage)),
+            ("Discard", "trash", "⌘W", #selector(discard))
         ]
         for (title, symbol, shortcut, action) in actions {
             let button = HoverButton(title: title, target: self, action: action)
@@ -1037,6 +1038,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             showError(error)
         }
     }
+
+    @objc private func discard() { window?.performClose(nil) }
 
     private func showError(_ error: Error) {
         let alert = NSAlert(error: error)
@@ -1214,7 +1217,7 @@ final class HelpViewController: NSViewController {
     static let dedicationURL = URL(string: "https://www.linkedin.com/in/dom%C3%A9nica-soria-40bb12184/")!
     private static let shortcuts = [
         ("⌘Z", "Undo"), ("⇧⌘Z", "Redo"), ("⌘C", "Copy image"), ("⌘S", "Save PNG"),
-        ("⌘W", "Close editor"), ("?", "Toggle help"), ("⇧", "Square / circle"), ("⇧⌘4", "New capture")
+        ("⌘W", "Discard"), ("?", "Toggle help"), ("⇧", "Square / circle"), ("⇧⌘4", "New capture")
     ]
     private let width: CGFloat = 320
 

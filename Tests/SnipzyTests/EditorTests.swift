@@ -55,6 +55,23 @@ struct EditorTests {
     }
 
     @Test
+    func discardButtonClosesEditorAndFiresOnClose() throws {
+        let controller = EditorWindowController(image: testImage())
+        var didClose = false
+        controller.onClose = { _ in didClose = true }
+        controller.showWindow(nil)
+        let window = try #require(controller.window)
+        let contentView = try #require(window.contentView)
+        let toolbar = try #require(contentView.subviews.compactMap { $0 as? NSStackView }.first)
+        let button = try #require(toolbar.arrangedSubviews.compactMap { $0 as? NSButton }.first { $0.title == "Discard" || $0.accessibilityLabel() == "Discard" })
+
+        button.performClick(nil)
+
+        #expect(!window.isVisible)
+        #expect(didClose)
+    }
+
+    @Test
     func lineDragCreatesRenderedLine() throws {
         let controller = EditorWindowController(image: testImage())
         let canvas = try canvas(of: controller)
@@ -449,7 +466,7 @@ struct EditorTests {
         content.layoutSubtreeIfNeeded()
         let toolbar = try #require(content.subviews.compactMap { $0 as? NSStackView }.first)
         let controls = toolbar.arrangedSubviews.compactMap { $0 as? NSControl }
-        #expect(controls.count == 19)
+        #expect(controls.count == 20)
         #expect((controls.first as? NSButton)?.identifier?.rawValue == "move")
         let iconButtons = controls.compactMap { $0 as? NSButton }.dropLast()
         #expect(iconButtons.allSatisfy { $0 is HoverButton })
