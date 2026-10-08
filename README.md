@@ -14,7 +14,7 @@
   <sub>macOS 14 or later · Apple Silicon and Intel · <a href="#install">install steps</a> · <a href="https://github.com/epulla/snipzy/releases">all releases</a></sub>
 </p>
 
-<p align="center"><a href="docs/assets/demo_0.4.0.mp4"><img src="docs/assets/demo-poster.png" width="820" alt="Snipzy demo: click to watch the video"></a></p>
+https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 
 ## Features
 
