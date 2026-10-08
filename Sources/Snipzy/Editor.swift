@@ -703,7 +703,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private let pasteboard: any ImagePasting
     private let recognizer: any TextRecognizing
     private let confirmDiscard: @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void
-    private var discardConfirmationGranted = false
     private var pendingText: (field: NSTextField, point: CGPoint, index: Int?)?
     private(set) var ocrTask: Task<Void, Never>?
     private(set) var ocrResult: OCRResultViewController?
@@ -757,15 +756,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if discardConfirmationGranted {
-            discardConfirmationGranted = false
-            return true
-        }
         guard !canvas.annotations.isEmpty else { return true }
-        confirmDiscard(sender) { [weak self, weak sender] confirmed in
-            guard confirmed, let self, let sender else { return }
-            self.discardConfirmationGranted = true
-            sender.performClose(nil)
+        confirmDiscard(sender) { [weak sender] confirmed in
+            guard confirmed, let sender else { return }
+            sender.close()
         }
         return false
     }

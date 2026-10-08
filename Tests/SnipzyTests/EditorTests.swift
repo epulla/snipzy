@@ -71,25 +71,60 @@ struct EditorTests {
         #expect(didClose)
     }
 
-    @Test(arguments: [false, true])
-    func annotatedEditorCloseUsesDiscardConfirmation(confirmsDiscard: Bool) throws {
+    @Test
+    func annotatedEditorCloseRequestsDiscardConfirmation() throws {
         var confirmationCount = 0
-        var didClose = false
         let controller = EditorWindowController(image: testImage(), confirmDiscard: { _, completion in
             confirmationCount += 1
-            completion(confirmsDiscard)
+            completion(false)
         })
         let canvas = try canvas(of: controller)
         canvas.addText("annotation", at: CGPoint(x: 0.5, y: 0.5))
-        controller.onClose = { _ in didClose = true }
+        let window = try #require(controller.window)
+
+        #expect(!controller.windowShouldClose(window))
+        #expect(confirmationCount == 1)
+    }
+
+    @Test
+    func discardInRealSheetClosesWindow() throws {
+        var didClose = false
+        let controller = EditorWindowController(image: testImage())
+        controller.onClose = { _ in
+            didClose = true
+            NSApplication.shared.setActivationPolicy(.accessory)
+        }
         controller.showWindow(nil)
         let window = try #require(controller.window)
+        let canvas = try canvas(of: controller)
+        canvas.addText("annotation", at: CGPoint(x: 0.5, y: 0.5))
 
         window.performClose(nil)
 
-        #expect(confirmationCount == 1)
-        #expect(window.isVisible == !confirmsDiscard)
-        #expect(didClose == confirmsDiscard)
+        let sheetDeadline = Date().addingTimeInterval(2)
+        while window.attachedSheet == nil && Date() < sheetDeadline {
+            RunLoop.main.run(until: min(sheetDeadline, Date().addingTimeInterval(0.01)))
+        }
+        let sheet = try #require(window.attachedSheet)
+        let contentView = try #require(sheet.contentView)
+        var views = [contentView]
+        var discardButton: NSButton?
+        while let view = views.popLast() {
+            if let button = view as? NSButton, button.title == "Discard" {
+                discardButton = button
+                break
+            }
+            views.append(contentsOf: view.subviews)
+        }
+        try #require(discardButton).performClick(nil)
+
+        let closeDeadline = Date().addingTimeInterval(2)
+        while window.isVisible && Date() < closeDeadline {
+            RunLoop.main.run(until: min(closeDeadline, Date().addingTimeInterval(0.01)))
+        }
+
+        #expect(!window.isVisible)
+        #expect(didClose)
     }
 
     @Test
