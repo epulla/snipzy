@@ -16,6 +16,30 @@
 
 https://github.com/user-attachments/assets/77979820-1cdc-40c5-b665-64b2307adfbc
 
+## Features
+
+- **Quick capture.** Start from the menu bar with `Cmd-Shift-4`.
+- **Mark up screenshots.** Use pen, highlighter, lines, arrows, rectangles, ellipses, and text.
+- **Hide private details.** Pixelate parts of an image.
+- **Read Text.** Copy text out of a screenshot with on-device recognition.
+- **Undo and redo.** Step backward or forward through edits.
+- **Copy or save.** Copy the finished image or save it as PNG.
+
+## Shortcuts
+
+| Key | Tool |
+| --- | --- |
+| V | Move |
+| P | Pen |
+| H | Highlight |
+| L | Line |
+| A | Arrow |
+| R | Rectangle |
+| E | Ellipse |
+| T | Text |
+| B | Pixelate |
+| O | Read Text |
+
 ## Requirements
 
 - macOS 14 or newer
@@ -65,7 +89,3 @@ build directly.
 
 - [Roadmap](docs/ROADMAP.md)
 - [Cross-platform plan](docs/CROSS_PLATFORM_PLAN.md)
-
-## Dedication
-
-Dedicated to my beloved queen, [Doménica Soria](https://www.linkedin.com/in/dom%C3%A9nica-soria-40bb12184/).
