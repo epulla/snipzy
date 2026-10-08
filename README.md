@@ -1,9 +1,18 @@
-<p align="center"><img src="docs/assets/logo-with-label.png" width="280" alt="Snipzy logo"></p>
+<p align="center">
+  <img src="Resources/AppIcon.png" width="128" alt="Snipzy icon">
+</p>
 
-# Snipzy
+<h1 align="center">Snipzy</h1>
 
-macOS menu bar screenshot tool. Capture a region, annotate it, then copy or
-save the result.
+<p align="center">
+  A tiny macOS menu-bar app that captures a region, lets you <b>annotate</b> it, then copies or saves it.<br>
+  <a href="https://github.com/epulla/snipzy/actions/workflows/ci.yml"><img src="https://github.com/epulla/snipzy/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/epulla/snipzy/releases/download/v0.4.0/Snipzy-0.4.0.zip"><img src="https://img.shields.io/github/v/release/epulla/snipzy?style=for-the-badge&logo=apple&label=Download%20for%20macOS&color=2ea44f" height="48" alt="Download Snipzy for macOS"></a><br>
+  <sub>macOS 14 or later · Apple Silicon and Intel · <a href="#install">install steps</a> · <a href="https://github.com/epulla/snipzy/releases">all releases</a></sub>
+</p>
 
 https://github.com/user-attachments/assets/77979820-1cdc-40c5-b665-64b2307adfbc
 
