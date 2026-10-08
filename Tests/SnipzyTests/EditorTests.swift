@@ -71,6 +71,43 @@ struct EditorTests {
         #expect(didClose)
     }
 
+    @Test(arguments: [false, true])
+    func annotatedEditorCloseUsesDiscardConfirmation(confirmsDiscard: Bool) throws {
+        var confirmationCount = 0
+        var didClose = false
+        let controller = EditorWindowController(image: testImage(), confirmDiscard: { _, completion in
+            confirmationCount += 1
+            completion(confirmsDiscard)
+        })
+        let canvas = try canvas(of: controller)
+        canvas.addText("annotation", at: CGPoint(x: 0.5, y: 0.5))
+        controller.onClose = { _ in didClose = true }
+        controller.showWindow(nil)
+        let window = try #require(controller.window)
+
+        window.performClose(nil)
+
+        #expect(confirmationCount == 1)
+        #expect(window.isVisible == !confirmsDiscard)
+        #expect(didClose == confirmsDiscard)
+    }
+
+    @Test
+    func emptyEditorClosesWithoutDiscardConfirmation() throws {
+        var confirmationCount = 0
+        var didClose = false
+        let controller = EditorWindowController(image: testImage(), confirmDiscard: { _, _ in confirmationCount += 1 })
+        controller.onClose = { _ in didClose = true }
+        controller.showWindow(nil)
+        let window = try #require(controller.window)
+
+        window.performClose(nil)
+
+        #expect(confirmationCount == 0)
+        #expect(!window.isVisible)
+        #expect(didClose)
+    }
+
     @Test
     func lineDragCreatesRenderedLine() throws {
         let controller = EditorWindowController(image: testImage())

@@ -702,6 +702,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private let canvas: EditorCanvas
     private let pasteboard: any ImagePasting
     private let recognizer: any TextRecognizing
+    private let confirmDiscard: @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void
+    private var discardConfirmationGranted = false
     private var pendingText: (field: NSTextField, point: CGPoint, index: Int?)?
     private(set) var ocrTask: Task<Void, Never>?
     private(set) var ocrResult: OCRResultViewController?
@@ -717,10 +719,18 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private(set) var tooltip: NSView?
     var onClose: ((EditorWindowController) -> Void)?
 
-    init(image: NSImage, pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer()) {
+    init(image: NSImage, pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
+        let alert = NSAlert()
+        alert.messageText = "Discard annotated screenshot?"
+        let discard = alert.addButton(withTitle: "Discard")
+        discard.hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel").keyEquivalent = "\r"
+        alert.beginSheetModal(for: window) { completion($0 == .alertFirstButtonReturn) }
+    }) {
         canvas = EditorCanvas(image: image)
         self.pasteboard = pasteboard
         self.recognizer = recognizer
+        self.confirmDiscard = confirmDiscard
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "Snipzy Editor"
         window.center()
@@ -738,13 +748,27 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             case .redo: self?.redo()
             case .copy: self?.copyImage()
             case .save: self?.saveImage()
-            case .close: self?.close()
+            case .close: self?.window?.performClose(nil)
             case .help: self?.toggleHelp()
             }
         }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if discardConfirmationGranted {
+            discardConfirmationGranted = false
+            return true
+        }
+        guard !canvas.annotations.isEmpty else { return true }
+        confirmDiscard(sender) { [weak self, weak sender] confirmed in
+            guard confirmed, let self, let sender else { return }
+            self.discardConfirmationGranted = true
+            sender.performClose(nil)
+        }
+        return false
+    }
 
     func windowWillClose(_ notification: Notification) {
         ocrTask?.cancel()
