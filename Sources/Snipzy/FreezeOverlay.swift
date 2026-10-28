@@ -1,16 +1,28 @@
 import AppKit
+import ScreenCaptureKit
 
 @MainActor
 enum DisplayUnderMouse {
-    static var frame: CGRect? {
-        (NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main)?.frame
+    /// Snapshot of the display under the mouse, or nil without Screen Recording permission.
+    /// Uses ScreenCaptureKit because a second `screencapture` run right before `screencapture -i`
+    /// fails with "cannot run two interactive screen captures at a time".
+    static func snapshot() async -> (image: NSImage, frame: CGRect)? {
+        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main,
+              let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
+        let frame = screen.frame
+        let pixelSize = CGSize(width: frame.width * screen.backingScaleFactor, height: frame.height * screen.backingScaleFactor)
+        guard let image = try? await capture(displayID: displayID, pixelSize: pixelSize) else { return nil }
+        return (NSImage(cgImage: image, size: frame.size), frame)
     }
 
-    static var primaryMaxY: CGFloat { NSScreen.screens.first?.frame.maxY ?? 0 }
-
-    /// AppKit frames use a bottom-left origin; screencapture expects top-left.
-    nonisolated static func captureRect(for frame: CGRect, primaryMaxY: CGFloat) -> CGRect {
-        CGRect(x: frame.minX, y: primaryMaxY - frame.maxY, width: frame.width, height: frame.height)
+    private nonisolated static func capture(displayID: CGDirectDisplayID, pixelSize: CGSize) async throws -> CGImage? {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let display = content.displays.first(where: { $0.displayID == displayID }) else { return nil }
+        let configuration = SCStreamConfiguration()
+        configuration.width = Int(pixelSize.width)
+        configuration.height = Int(pixelSize.height)
+        configuration.showsCursor = false
+        return try await SCScreenshotManager.captureImage(contentFilter: SCContentFilter(display: display, excludingWindows: []), configuration: configuration)
     }
 }
 

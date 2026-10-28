@@ -71,47 +71,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func capture() {
         guard !captureInProgress else { return }
         captureInProgress = true
-        let frame = DisplayUnderMouse.frame
-        let rect = frame.map { DisplayUnderMouse.captureRect(for: $0, primaryMaxY: DisplayUnderMouse.primaryMaxY) }
-        DispatchQueue.global(qos: .userInitiated).async { [captureService] in
+        Task { @MainActor in
             // Without a snapshot (e.g. no Screen Recording permission) selection runs on the live screen.
-            let snapshot = rect.flatMap { try? captureService.captureDisplay(rect: $0) }
-            DispatchQueue.main.async {
-                var overlay: FreezeOverlay?
-                if let snapshot, let frame { overlay = FreezeOverlay(image: snapshot.image, frame: frame) }
-                overlay?.show()
-                DispatchQueue.global(qos: .userInitiated).async { [overlay] in
-                    let result = Result { try captureService.capture() }
-                    DispatchQueue.main.async { [weak self] in
-                        overlay?.close()
-                        self?.finishCapture(result)
-                    }
+            let overlay = await DisplayUnderMouse.snapshot().map { FreezeOverlay(image: $0.image, frame: $0.frame) }
+            overlay?.show()
+            DispatchQueue.global(qos: .userInitiated).async { [captureService, overlay] in
+                let result = Result { try captureService.capture() }
+                DispatchQueue.main.async { [weak self] in
+                    overlay?.close()
+                    self?.finishCapture(result)
                 }
             }
         }
     }
 
     @objc private func drawOnScreen() {
-        guard !captureInProgress, !editors.contains(where: \.isDrawMode), let frame = DisplayUnderMouse.frame else { return }
+        guard !captureInProgress, !editors.contains(where: \.isDrawMode) else { return }
         captureInProgress = true
-        let rect = DisplayUnderMouse.captureRect(for: frame, primaryMaxY: DisplayUnderMouse.primaryMaxY)
-        DispatchQueue.global(qos: .userInitiated).async { [captureService] in
-            let result = Result { try captureService.captureDisplay(rect: rect) }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                captureInProgress = false
-                switch result {
-                case let .success(captured):
-                    let overlay = EditorWindowController(image: captured.image, pasteboard: pasteboard, drawOn: frame)
-                    overlay.onOpenInEditor = { [weak self] image, annotations in
-                        guard let self else { return }
-                        showEditor(EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard))
-                    }
-                    showEditor(overlay)
-                case let .failure(error):
-                    showError(error)
-                }
+        Task { @MainActor in
+            let snapshot = await DisplayUnderMouse.snapshot()
+            captureInProgress = false
+            guard let snapshot else {
+                showError(AppError.screenSnapshotFailed)
+                return
             }
+            let overlay = EditorWindowController(image: snapshot.image, pasteboard: pasteboard, drawOn: snapshot.frame)
+            overlay.onOpenInEditor = { [weak self] image, annotations in
+                guard let self else { return }
+                showEditor(EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard))
+            }
+            showEditor(overlay)
         }
     }
 
@@ -178,11 +167,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 enum AppError: LocalizedError {
     case clipboardWriteFailed
     case imageEncodingFailed
+    case screenSnapshotFailed
 
     var errorDescription: String? {
         switch self {
         case .clipboardWriteFailed: return "Could not copy screenshot to clipboard"
         case .imageEncodingFailed: return "Could not encode annotated screenshot"
+        case .screenSnapshotFailed: return "Could not capture the screen. Check Screen Recording permission for Snipzy."
         }
     }
 }

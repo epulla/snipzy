@@ -77,11 +77,6 @@ struct CaptureService: @unchecked Sendable {
         try run(["-i", "-s", "-x", "-d"])
     }
 
-    /// Captures `rect` (global display points, top-left origin) without user interaction.
-    func captureDisplay(rect: CGRect) throws -> CapturedImage {
-        try run(["-x", "-R\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height))"])
-    }
-
     private func run(_ arguments: [String]) throws -> CapturedImage {
         let url = temporaryDirectory.appendingPathComponent("snipzy-\(UUID().uuidString).png")
         defer { try? fileManager.removeItem(at: url) }
