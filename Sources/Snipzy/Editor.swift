@@ -768,7 +768,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             case .redo: self?.redo()
             case .copy: self?.copyImage()
             case .save: self?.saveImage()
-            case .close: self?.window?.performClose(nil)
+            case .close: self?.isDrawMode == true ? self?.window?.close() : self?.window?.performClose(nil)
             case .help: self?.toggleHelp()
             case .escape: self?.escape()
             case .enter: self?.openInEditor()
@@ -914,13 +914,15 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         toolbar.addArrangedSubview(textSizeStepper)
         let spacer = NSView()
         toolbar.addArrangedSubview(spacer)
-        let actions: [(String, String, String, Selector)] = [
+        var actions: [(String, String, String, Selector)] = [
             ("Undo", "arrow.uturn.backward", "⌘Z", #selector(undo)),
             ("Redo", "arrow.uturn.forward", "⇧⌘Z", #selector(redo)),
             ("Copy image", "doc.on.doc", "⌘C", #selector(copyImage)),
             ("Save PNG", "square.and.arrow.down", "⌘S", #selector(saveImage)),
             ("Discard", "trash", "⌘W", #selector(discard))
         ]
+        // Draw mode exits with Esc, so a discard button would only duplicate it.
+        if isDrawMode { actions.removeLast() }
         for (title, symbol, shortcut, action) in actions {
             let button = HoverButton(title: title, target: self, action: action)
             button.bezelStyle = .texturedRounded

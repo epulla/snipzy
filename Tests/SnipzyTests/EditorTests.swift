@@ -744,6 +744,24 @@ struct EditorTests {
         #expect(draw.window?.isVisible == false)
     }
 
+    @Test
+    func drawModeHasNoDiscardButton() throws {
+        let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let editor = EditorWindowController(image: testImage())
+
+        let drawButtons = buttonTitles(in: draw.window?.contentView)
+        let editorButtons = buttonTitles(in: editor.window?.contentView)
+
+        #expect(drawButtons.contains("Save PNG"))
+        #expect(!drawButtons.contains("Discard"))
+        #expect(editorButtons.contains("Discard"))
+    }
+
+    private func buttonTitles(in view: NSView?) -> [String] {
+        guard let view else { return [] }
+        return ((view as? NSButton).map { [$0.title] } ?? []) + view.subviews.flatMap { buttonTitles(in: $0) }
+    }
+
     private func press(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags = [], in controller: EditorWindowController) throws {
         let window = try #require(controller.window)
         let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode))
