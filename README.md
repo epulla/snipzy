@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Resources/AppIcon.png" width="128" alt="Snipzy icon">
+  <img src="Resources/Branding/SnipzyMascot.png" width="160" alt="Snipzy mascot: winking cyan scissors">
 </p>
 
 <h1 align="center">Snipzy</h1>
