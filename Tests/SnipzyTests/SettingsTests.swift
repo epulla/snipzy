@@ -11,6 +11,7 @@ struct SettingsTests {
         defer { defaults.removePersistentDomain(forName: "SnipzySettingsTests") }
         let settings = SettingsWindowController(defaults: defaults)
         #expect(settings.autoCopyCheckbox.state == .off)
+        #expect(settings.loginCheckbox.state == .off)
 
         settings.autoCopyCheckbox.performClick(nil)
 

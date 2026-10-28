@@ -1,9 +1,11 @@
 import AppKit
+import ServiceManagement
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
     static let autoCopyKey = "autoCopyAfterEdit"
     private let defaults: UserDefaults
+    let loginCheckbox = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
     let autoCopyCheckbox = NSButton(checkboxWithTitle: "Copy image to clipboard after each edit", target: nil, action: nil)
 
     init(defaults: UserDefaults = .standard) {
@@ -13,6 +15,9 @@ final class SettingsWindowController: NSWindowController {
         window.isReleasedWhenClosed = false
         super.init(window: window)
 
+        loginCheckbox.target = self
+        loginCheckbox.action = #selector(toggleLogin)
+        refreshLoginState()
         autoCopyCheckbox.target = self
         autoCopyCheckbox.action = #selector(toggleAutoCopy(_:))
         autoCopyCheckbox.state = defaults.bool(forKey: Self.autoCopyKey) ? .on : .off
@@ -20,10 +25,11 @@ final class SettingsWindowController: NSWindowController {
         note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
         note.preferredMaxLayoutWidth = 340
-        let stack = NSStackView(views: [autoCopyCheckbox, note])
+        let stack = NSStackView(views: [loginCheckbox, autoCopyCheckbox, note])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
+        stack.setCustomSpacing(12, after: loginCheckbox)
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
         window.contentView = stack
         window.setContentSize(stack.fittingSize)
@@ -31,6 +37,25 @@ final class SettingsWindowController: NSWindowController {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func showWindow(_ sender: Any?) {
+        // Login items can be changed in System Settings while Snipzy runs.
+        refreshLoginState()
+        super.showWindow(sender)
+    }
+
+    private func refreshLoginState() {
+        loginCheckbox.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    }
+
+    @objc private func toggleLogin() {
+        do {
+            if loginCheckbox.state == .on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+        } catch {
+            NSAlert(error: error).runModal()
+            refreshLoginState()
+        }
+    }
 
     @objc private func toggleAutoCopy(_ sender: NSButton) {
         defaults.set(sender.state == .on, forKey: Self.autoCopyKey)
