@@ -745,21 +745,22 @@ struct EditorTests {
     }
 
     @Test
-    func drawModeHasNoDiscardButton() throws {
-        let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
-        let editor = EditorWindowController(image: testImage())
+    func drawModeDiscardButtonExitsWithoutConfirmation() throws {
+        var confirmations = 0
+        let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100), confirmDiscard: { _, _ in confirmations += 1 })
+        draw.showWindow(nil)
+        try canvas(of: draw).addText("note", at: CGPoint(x: 0.5, y: 0.5))
+        let discard = try #require(buttons(in: draw.window?.contentView).first { $0.title == "Discard" })
 
-        let drawButtons = buttonTitles(in: draw.window?.contentView)
-        let editorButtons = buttonTitles(in: editor.window?.contentView)
+        discard.performClick(nil)
 
-        #expect(drawButtons.contains("Save PNG"))
-        #expect(!drawButtons.contains("Discard"))
-        #expect(editorButtons.contains("Discard"))
+        #expect(draw.window?.isVisible == false)
+        #expect(confirmations == 0)
     }
 
-    private func buttonTitles(in view: NSView?) -> [String] {
+    private func buttons(in view: NSView?) -> [NSButton] {
         guard let view else { return [] }
-        return ((view as? NSButton).map { [$0.title] } ?? []) + view.subviews.flatMap { buttonTitles(in: $0) }
+        return ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap { buttons(in: $0) }
     }
 
     private func press(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags = [], in controller: EditorWindowController) throws {
