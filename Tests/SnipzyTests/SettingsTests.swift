@@ -18,4 +18,17 @@ struct SettingsTests {
         #expect(defaults.bool(forKey: SettingsWindowController.autoCopyKey))
         #expect(SettingsWindowController(defaults: defaults).autoCopyCheckbox.state == .on)
     }
+
+    @Test
+    func launchAtLoginRegistersOnlyOnFirstRun() throws {
+        let defaults = try #require(UserDefaults(suiteName: "SnipzySettingsTests"))
+        defaults.removePersistentDomain(forName: "SnipzySettingsTests")
+        defer { defaults.removePersistentDomain(forName: "SnipzySettingsTests") }
+        var registrations = 0
+
+        SettingsWindowController.applyLaunchAtLoginDefault(defaults: defaults) { registrations += 1 }
+        SettingsWindowController.applyLaunchAtLoginDefault(defaults: defaults) { registrations += 1 }
+
+        #expect(registrations == 1)
+    }
 }

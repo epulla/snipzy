@@ -4,6 +4,14 @@ import ServiceManagement
 @MainActor
 final class SettingsWindowController: NSWindowController {
     static let autoCopyKey = "autoCopyAfterEdit"
+    static let loginDefaultAppliedKey = "launchAtLoginDefaultApplied"
+
+    /// Launch at login defaults to on: register once on first run, then respect the user's choice.
+    static func applyLaunchAtLoginDefault(defaults: UserDefaults = .standard, register: () throws -> Void = { try SMAppService.mainApp.register() }) {
+        guard !defaults.bool(forKey: loginDefaultAppliedKey) else { return }
+        defaults.set(true, forKey: loginDefaultAppliedKey)
+        try? register()
+    }
     private let defaults: UserDefaults
     let loginCheckbox = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
     let autoCopyCheckbox = NSButton(checkboxWithTitle: "Copy image to clipboard after each edit", target: nil, action: nil)

@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 - **Undo and redo.** Step backward or forward through edits.
 - **Copy or save.** Copy the finished image or save it as PNG.
 - **Auto-copy (optional).** Turn on "Copy image to clipboard after each edit" in Settings (`Cmd-,`) to keep the clipboard up to date while you annotate.
-- **Launch at login (optional).** Also in Settings.
+- **Launch at login.** On by default; turn it off in Settings.
 
 ## Shortcuts
 

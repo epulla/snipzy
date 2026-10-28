@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.toolTip = "Snipzy: Cmd-Shift-4 to capture, Cmd-Shift-6 to draw on screen"
         statusItem.menu = makeMenu()
         showShortcutHintIfNeeded()
+        SettingsWindowController.applyLaunchAtLoginDefault()
 
         hotKeyMonitors = [
             CarbonHotKeyMonitor(keyCode: kVK_ANSI_4, id: 1) { [weak self] in self?.capture() },
