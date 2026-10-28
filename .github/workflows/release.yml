@@ -38,3 +38,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" "dist/Snipzy-$VERSION.zip" "dist/Snipzy-$VERSION.zip.sha256" --title "Snipzy $VERSION" --generate-notes
+      - uses: actions/checkout@v4
+        with:
+          repository: epulla/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: homebrew-tap
+      - name: Bump Homebrew cask
+        working-directory: homebrew-tap
+        run: |
+          set -euo pipefail
+          SHA="$(cut -d ' ' -f 1 "../dist/Snipzy-$VERSION.zip.sha256")"
+          sed -i '' -e "s/^  version \".*\"/  version \"$VERSION\"/" -e "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" Casks/snipzy.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "snipzy $VERSION"
+          git push

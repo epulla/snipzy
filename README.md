@@ -48,12 +48,17 @@ https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 
 ## Install
 
-Download the latest ZIP from [Releases](https://github.com/epulla/snipzy/releases),
+```sh
+brew install --cask epulla/tap/snipzy
+```
+
+Or download the latest ZIP from [Releases](https://github.com/epulla/snipzy/releases),
 unzip it, and move `Snipzy.app` to `/Applications`.
 
 Release builds are ad-hoc signed and not notarized. On first launch, Control-click
 `Snipzy.app`, choose **Open**, and confirm. macOS may instead show **Open Anyway**
-under **System Settings > Privacy & Security**.
+under **System Settings > Privacy & Security**. After each upgrade, you may need to
+re-grant Screen Recording permission.
 
 ## Setup
 
