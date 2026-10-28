@@ -773,6 +773,34 @@ struct EditorTests {
         #expect(draw.window?.isVisible == false)
     }
 
+    @Test
+    func autoCopyCopiesAfterEachCompletedEditOnlyWhenEnabled() throws {
+        let pasteboard = RecordingPasteboard()
+        var enabled = false
+        let controller = EditorWindowController(image: testImage(), pasteboard: pasteboard, autoCopy: { enabled })
+        let canvas = try canvas(of: controller)
+
+        canvas.addText("off", at: CGPoint(x: 0.2, y: 0.2))
+        #expect(pasteboard.writeCount == 0)
+
+        enabled = true
+        canvas.addText("on", at: CGPoint(x: 0.4, y: 0.4))
+        canvas.undo()
+        canvas.redo()
+        canvas.removeAnnotation(at: 0)
+        #expect(pasteboard.writeCount == 4)
+    }
+
+    @Test
+    func drawModeNeverAutoCopies() throws {
+        let pasteboard = RecordingPasteboard()
+        let draw = EditorWindowController(image: testImage(), pasteboard: pasteboard, drawOn: CGRect(x: 0, y: 0, width: 100, height: 100), autoCopy: { true })
+
+        try canvas(of: draw).addText("note", at: CGPoint(x: 0.5, y: 0.5))
+
+        #expect(pasteboard.writeCount == 0)
+    }
+
     private func buttons(in view: NSView?) -> [NSButton] {
         guard let view else { return [] }
         return ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap { buttons(in: $0) }

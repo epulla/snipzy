@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var captureInProgress = false
     private let captureService = CaptureService()
     private let pasteboard = SystemPasteboard()
+    private lazy var settings = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMainMenu()
@@ -34,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static func makeMainMenu() -> NSMenu {
         let menu = NSMenu()
         let appMenu = NSMenu(title: "Snipzy")
+        appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.openSettings), keyEquivalent: ",")
+        appMenu.addItem(.separator())
         let quit = appMenu.addItem(withTitle: "Quit Snipzy", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(withTitle: "Snipzy", action: nil, keyEquivalent: "").submenu = appMenu
@@ -62,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let drawItem = menu.addItem(withTitle: "Draw on Screen", action: #selector(drawOnScreen), keyEquivalent: "6")
         drawItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(withTitle: "Open Desktop", action: #selector(openDesktop), keyEquivalent: "")
+        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Snipzy", action: #selector(quit), keyEquivalent: "q")
         menu.items.forEach { $0.target = self }
@@ -127,6 +131,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             controller?.window?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    @objc func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        settings.showWindow(nil)
+        settings.window?.makeKeyAndOrderFront(nil)
     }
 
     @objc private func openDesktop() {

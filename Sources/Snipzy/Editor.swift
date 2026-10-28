@@ -135,6 +135,8 @@ final class EditorCanvas: NSView {
     var textSelectionHandler: ((Int?) -> Void)?
     var commandHandler: ((EditorCommand) -> Void)?
     var ocrHandler: ((CGRect) -> Void)?
+    /// Fires once per completed change, not on every drag step.
+    var editHandler: (() -> Void)?
     private(set) var ocrSelection: CGRect?
 
     init(image: NSImage, annotations: [Annotation] = []) {
@@ -302,6 +304,7 @@ final class EditorCanvas: NSView {
         editingIndex = nil
         textSelectionHandler?(nil)
         needsDisplay = true
+        editHandler?()
     }
 
     func redo() {
@@ -312,6 +315,7 @@ final class EditorCanvas: NSView {
         editingIndex = nil
         textSelectionHandler?(nil)
         needsDisplay = true
+        editHandler?()
     }
 
     func addText(_ text: String, at point: CGPoint) {
@@ -319,6 +323,7 @@ final class EditorCanvas: NSView {
         recordState()
         annotations.append(Annotation(tool: .text, start: point, end: point, points: [], text: text, color: strokeColor, lineWidth: strokeWidth, fontSize: textSize))
         needsDisplay = true
+        editHandler?()
     }
 
     func updateText(at index: Int, text: String? = nil, color: NSColor? = nil, fontSize: CGFloat? = nil) {
@@ -328,6 +333,7 @@ final class EditorCanvas: NSView {
         if let color { annotations[index].color = color }
         if let fontSize { annotations[index].fontSize = fontSize }
         needsDisplay = true
+        editHandler?()
     }
 
     private func beginEditing(_ index: Int) {
@@ -345,6 +351,7 @@ final class EditorCanvas: NSView {
         selectedTextIndex = nil
         textSelectionHandler?(nil)
         needsDisplay = true
+        editHandler?()
     }
 
     func renderedPNGData() -> Data? {
@@ -473,6 +480,7 @@ final class EditorCanvas: NSView {
         if let moving = movingIndex {
             movingIndex = nil
             if editOnRelease, !moving.moved { beginEditing(moving.index) }
+            if moving.moved { editHandler?() }
             editOnRelease = false
             dragStart = nil
             dragCurrent = nil
@@ -511,6 +519,7 @@ final class EditorCanvas: NSView {
         let color = tool == .highlighter ? strokeColor.withAlphaComponent(0.35) : strokeColor
         let width = tool == .highlighter ? max(12, strokeWidth * 4) : strokeWidth
         annotations.append(Annotation(tool: tool, start: start, end: current, points: points, text: "", color: color, lineWidth: width))
+        editHandler?()
     }
 
     private var imageRect: CGRect {
@@ -729,7 +738,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     let isDrawMode: Bool
     var onOpenInEditor: ((NSImage, [Annotation]) -> Void)?
 
-    init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), drawOn frame: CGRect? = nil, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
+    init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), drawOn frame: CGRect? = nil, autoCopy: @escaping () -> Bool = { UserDefaults.standard.bool(forKey: SettingsWindowController.autoCopyKey) }, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
         let alert = NSAlert()
         alert.messageText = "Discard annotated screenshot?"
         let discard = alert.addButton(withTitle: "Discard")
@@ -762,6 +771,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         canvas.editTextHandler = { [weak self] index in self?.editText(at: index) }
         canvas.textSelectionHandler = { [weak self] index in self?.selectText(at: index) }
         canvas.ocrHandler = { [weak self] region in self?.recognizeText(in: region) }
+        if frame == nil {
+            canvas.editHandler = { [weak self] in
+                guard autoCopy() else { return }
+                self?.writeImageToPasteboard()
+            }
+        }
         canvas.commandHandler = { [weak self] command in
             switch command {
             case .undo: self?.undo()
@@ -1091,6 +1106,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             showError(AppError.clipboardWriteFailed)
             return
         }
+    }
+
+    // Auto-copy is silent, so failures are ignored rather than interrupting editing.
+    private func writeImageToPasteboard() {
+        guard let png = canvas.renderedPNGData(), let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation else { return }
+        pasteboard.write(pngData: png, tiffData: tiff)
     }
 
     @objc private func saveImage() {
