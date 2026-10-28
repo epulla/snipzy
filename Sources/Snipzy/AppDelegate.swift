@@ -65,10 +65,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureItem.keyEquivalentModifierMask = [.command, .shift]
         let drawItem = menu.addItem(withTitle: "Draw on Screen", action: #selector(drawOnScreen), keyEquivalent: "6")
         drawItem.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(withTitle: "Open Desktop", action: #selector(openDesktop), keyEquivalent: "")
-        menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        let desktopItem = menu.addItem(withTitle: "Open Desktop", action: #selector(openDesktop), keyEquivalent: "")
+        let settingsItem = menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Snipzy", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = menu.addItem(withTitle: "Quit Snipzy", action: #selector(quit), keyEquivalent: "q")
+        let symbols = [(captureItem, "viewfinder"), (drawItem, "pencil.tip.crop.circle"), (desktopItem, "menubar.dock.rectangle"), (settingsItem, "gearshape"), (quitItem, "power")]
+        for (item, symbol) in symbols { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
         menu.items.forEach { $0.target = self }
         return menu
     }
