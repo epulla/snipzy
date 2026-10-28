@@ -758,6 +758,21 @@ struct EditorTests {
         #expect(confirmations == 0)
     }
 
+    @Test
+    func drawModeOpenInEditorButtonMatchesEnter() throws {
+        let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
+        var opened = false
+        draw.onOpenInEditor = { _, _ in opened = true }
+        draw.showWindow(nil)
+        #expect(!buttons(in: EditorWindowController(image: testImage()).window?.contentView).contains { $0.title == "Open in editor" })
+        let open = try #require(buttons(in: draw.window?.contentView).first { $0.title == "Open in editor" })
+
+        open.performClick(nil)
+
+        #expect(opened)
+        #expect(draw.window?.isVisible == false)
+    }
+
     private func buttons(in view: NSView?) -> [NSButton] {
         guard let view else { return [] }
         return ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap { buttons(in: $0) }

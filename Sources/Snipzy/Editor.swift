@@ -914,13 +914,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         toolbar.addArrangedSubview(textSizeStepper)
         let spacer = NSView()
         toolbar.addArrangedSubview(spacer)
-        let actions: [(String, String, String, Selector)] = [
+        var actions: [(String, String, String, Selector)] = [
             ("Undo", "arrow.uturn.backward", "⌘Z", #selector(undo)),
             ("Redo", "arrow.uturn.forward", "⇧⌘Z", #selector(redo)),
             ("Copy image", "doc.on.doc", "⌘C", #selector(copyImage)),
             ("Save PNG", "square.and.arrow.down", "⌘S", #selector(saveImage)),
             ("Discard", "trash", "⌘W", #selector(discard))
         ]
+        if isDrawMode { actions.insert(("Open in editor", "macwindow", "↩", #selector(openInEditor)), at: 0) }
         for (title, symbol, shortcut, action) in actions {
             let button = HoverButton(title: title, target: self, action: action)
             button.bezelStyle = .texturedRounded
@@ -1114,7 +1115,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         }
     }
 
-    private func openInEditor() {
+    @objc private func openInEditor() {
         guard isDrawMode else { return }
         copyImage()
         onOpenInEditor?(canvas.image, canvas.annotations)
