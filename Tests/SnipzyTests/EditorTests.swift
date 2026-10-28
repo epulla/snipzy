@@ -47,6 +47,15 @@ struct EditorTests {
     }
 
     @Test
+    func defaultFileNameUsesSnipzyDateTime() {
+        var components = DateComponents(year: 2026, month: 10, day: 28, hour: 9, minute: 5, second: 7)
+        components.calendar = Calendar.current
+        let date = components.date!
+
+        #expect(EditorWindowController.defaultFileName(date: date) == "snipzy-2026-10-28_09-05-07.png")
+    }
+
+    @Test
     func editorWindowStartsWithCanvasAsInitialFirstResponder() throws {
         let controller = EditorWindowController(image: testImage())
         let canvas = try canvas(of: controller)

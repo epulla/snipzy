@@ -1047,7 +1047,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         finishText(commit: true)
         guard let png = canvas.renderedPNGData() else { return }
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "Snipzy.png"
+        panel.nameFieldStringValue = Self.defaultFileName()
         panel.allowedContentTypes = [.png]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -1055,6 +1055,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         } catch {
             showError(error)
         }
+    }
+
+    nonisolated static func defaultFileName(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        return "snipzy-\(formatter.string(from: date)).png"
     }
 
     @objc private func discard() { window?.performClose(nil) }
