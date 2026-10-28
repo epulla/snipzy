@@ -718,6 +718,32 @@ struct EditorTests {
         #expect(didClose)
     }
 
+    @Test
+    func editorStartsWithPassedAnnotations() throws {
+        let source = EditorCanvas(image: testImage())
+        source.addText("kept", at: CGPoint(x: 0.3, y: 0.3))
+
+        let controller = EditorWindowController(image: testImage(), annotations: source.annotations)
+
+        #expect(try canvas(of: controller).annotations.map(\.text) == ["kept"])
+    }
+
+    @Test
+    func enterInDrawModeCopiesOpensEditorAndCloses() throws {
+        let pasteboard = RecordingPasteboard()
+        let draw = EditorWindowController(image: testImage(), pasteboard: pasteboard, drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
+        var opened: [Annotation]?
+        draw.onOpenInEditor = { _, annotations in opened = annotations }
+        draw.showWindow(nil)
+        try canvas(of: draw).addText("note", at: CGPoint(x: 0.5, y: 0.5))
+
+        try press(keyCode: 36, characters: "\r", in: draw)
+
+        #expect(opened?.map(\.text) == ["note"])
+        #expect(pasteboard.writeCount == 1)
+        #expect(draw.window?.isVisible == false)
+    }
+
     private func press(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags = [], in controller: EditorWindowController) throws {
         let window = try #require(controller.window)
         let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode))

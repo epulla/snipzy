@@ -113,7 +113,7 @@ final class ColorDot: NSView {
 @MainActor
 final class EditorCanvas: NSView {
     private(set) var annotations: [Annotation] = []
-    private let image: NSImage
+    let image: NSImage
     private let bitmap: NSBitmapImageRep?
     private(set) var tool: AnnotationTool = .pen
     private(set) var selectedTextIndex: Int?
@@ -137,8 +137,9 @@ final class EditorCanvas: NSView {
     var ocrHandler: ((CGRect) -> Void)?
     private(set) var ocrSelection: CGRect?
 
-    init(image: NSImage) {
+    init(image: NSImage, annotations: [Annotation] = []) {
         self.image = image
+        self.annotations = annotations
         bitmap = image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))
         super.init(frame: .zero)
         wantsLayer = true
@@ -216,6 +217,10 @@ final class EditorCanvas: NSView {
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
             commandHandler?(.escape)
+            return
+        }
+        if event.keyCode == 36 || event.keyCode == 76, !event.modifierFlags.contains(.command) {
+            commandHandler?(event.modifierFlags.contains(.shift) ? .shiftEnter : .enter)
             return
         }
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
@@ -722,8 +727,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private(set) var tooltip: NSView?
     var onClose: ((EditorWindowController) -> Void)?
     let isDrawMode: Bool
+    var onOpenInEditor: ((NSImage, [Annotation]) -> Void)?
 
-    init(image: NSImage, pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), drawOn frame: CGRect? = nil, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
+    init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), drawOn frame: CGRect? = nil, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
         let alert = NSAlert()
         alert.messageText = "Discard annotated screenshot?"
         let discard = alert.addButton(withTitle: "Discard")
@@ -731,7 +737,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         alert.addButton(withTitle: "Cancel").keyEquivalent = "\r"
         alert.beginSheetModal(for: window) { completion($0 == .alertFirstButtonReturn) }
     }) {
-        canvas = EditorCanvas(image: image)
+        canvas = EditorCanvas(image: image, annotations: annotations)
         self.pasteboard = pasteboard
         self.recognizer = recognizer
         self.confirmDiscard = confirmDiscard
@@ -765,6 +771,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             case .close: self?.window?.performClose(nil)
             case .help: self?.toggleHelp()
             case .escape: self?.escape()
+            case .enter: self?.openInEditor()
+            case .shiftEnter: self?.saveAndExit()
             }
         }
     }
@@ -1085,17 +1093,42 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     }
 
     @objc private func saveImage() {
+        save()
+    }
+
+    @discardableResult
+    private func save() -> Bool {
         finishText(commit: true)
-        guard let png = canvas.renderedPNGData() else { return }
+        guard let png = canvas.renderedPNGData() else { return false }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = Self.defaultFileName()
         panel.allowedContentTypes = [.png]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        raiseAboveDrawMode(panel)
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
         do {
             try png.write(to: url, options: .atomic)
+            return true
         } catch {
             showError(error)
+            return false
         }
+    }
+
+    private func openInEditor() {
+        guard isDrawMode else { return }
+        copyImage()
+        onOpenInEditor?(canvas.image, canvas.annotations)
+        window?.close()
+    }
+
+    private func saveAndExit() {
+        guard isDrawMode, save() else { return }
+        window?.close()
+    }
+
+    private func raiseAboveDrawMode(_ panel: NSWindow) {
+        guard isDrawMode, let window else { return }
+        panel.level = NSWindow.Level(window.level.rawValue + 1)
     }
 
     nonisolated static func defaultFileName(date: Date = Date()) -> String {
@@ -1119,6 +1152,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
 
     private func showError(_ error: Error) {
         let alert = NSAlert(error: error)
+        raiseAboveDrawMode(alert.window)
         alert.runModal()
     }
 
@@ -1415,7 +1449,7 @@ private func keycap(_ key: String) -> NSView {
 }
 
 enum EditorCommand {
-    case undo, redo, copy, save, close, help, escape
+    case undo, redo, copy, save, close, help, escape, enter, shiftEnter
 }
 
 /// Borderless windows refuse key status by default; draw mode needs it for shortcuts and text.

@@ -102,7 +102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 captureInProgress = false
                 switch result {
                 case let .success(captured):
-                    showEditor(EditorWindowController(image: captured.image, pasteboard: pasteboard, drawOn: frame))
+                    let overlay = EditorWindowController(image: captured.image, pasteboard: pasteboard, drawOn: frame)
+                    overlay.onOpenInEditor = { [weak self] image, annotations in
+                        guard let self else { return }
+                        showEditor(EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard))
+                    }
+                    showEditor(overlay)
                 case let .failure(error):
                     showError(error)
                 }
