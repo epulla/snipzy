@@ -19,10 +19,12 @@ private func snipzyHotKeyHandler(
         nil,
         &hotKeyID
     )
-    if status == noErr, hotKeyID.signature == snipzyHotKeySignature {
-        DispatchQueue.main.async {
-            monitor.fire()
-        }
+    // Each monitor installs its own handler, so pass other hotkeys on to the next one.
+    guard status == noErr, hotKeyID.signature == snipzyHotKeySignature, hotKeyID.id == monitor.id else {
+        return OSStatus(eventNotHandledErr)
+    }
+    DispatchQueue.main.async {
+        monitor.fire()
     }
     return noErr
 }
@@ -30,9 +32,15 @@ private func snipzyHotKeyHandler(
 final class CarbonHotKeyMonitor: @unchecked Sendable {
     private var hotKey: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
+    private let keyCode: Int
+    private let modifiers: Int
+    fileprivate let id: UInt32
     private let callback: () -> Void
 
-    init(callback: @escaping () -> Void) {
+    init(keyCode: Int, modifiers: Int = cmdKey | shiftKey, id: UInt32, callback: @escaping () -> Void) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+        self.id = id
         self.callback = callback
     }
 
@@ -51,10 +59,10 @@ final class CarbonHotKeyMonitor: @unchecked Sendable {
         )
         guard installStatus == noErr else { throw HotKeyError.status(installStatus) }
 
-        let hotKeyID = EventHotKeyID(signature: snipzyHotKeySignature, id: 1)
+        let hotKeyID = EventHotKeyID(signature: snipzyHotKeySignature, id: id)
         let registerStatus = RegisterEventHotKey(
-            UInt32(kVK_ANSI_4),
-            UInt32(cmdKey | shiftKey),
+            UInt32(keyCode),
+            UInt32(modifiers),
             hotKeyID,
             GetApplicationEventTarget(),
             OptionBits(kEventHotKeyExclusive),

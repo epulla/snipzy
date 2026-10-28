@@ -1,9 +1,10 @@
 import AppKit
+import Carbon.HIToolbox
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var hotKeyMonitor: CarbonHotKeyMonitor?
+    private var hotKeyMonitors: [CarbonHotKeyMonitor] = []
     private var editors: [EditorWindowController] = []
     private var captureInProgress = false
     private let captureService = CaptureService()
@@ -13,18 +14,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = Self.makeMainMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "scissors", accessibilityDescription: "Snipzy")
-        statusItem.button?.toolTip = "Snipzy: Cmd-Shift-4 to capture"
+        statusItem.button?.toolTip = "Snipzy: Cmd-Shift-4 to capture, Cmd-Shift-6 to draw on screen"
         statusItem.menu = makeMenu()
         showShortcutHintIfNeeded()
 
-        let monitor = CarbonHotKeyMonitor { [weak self] in
-            self?.capture()
-        }
-        hotKeyMonitor = monitor
-        do {
-            try monitor.start()
-        } catch {
-            showError(error)
+        hotKeyMonitors = [
+            CarbonHotKeyMonitor(keyCode: kVK_ANSI_4, id: 1) { [weak self] in self?.capture() },
+            CarbonHotKeyMonitor(keyCode: kVK_ANSI_6, id: 2) { [weak self] in self?.drawOnScreen() }
+        ]
+        for monitor in hotKeyMonitors {
+            do {
+                try monitor.start()
+            } catch {
+                showError(error)
+            }
         }
     }
 
@@ -49,13 +52,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        hotKeyMonitor?.stop()
+        hotKeyMonitors.forEach { $0.stop() }
     }
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         let captureItem = menu.addItem(withTitle: "Capture Selection", action: #selector(capture), keyEquivalent: "4")
         captureItem.keyEquivalentModifierMask = [.command, .shift]
+        let drawItem = menu.addItem(withTitle: "Draw on Screen", action: #selector(drawOnScreen), keyEquivalent: "6")
+        drawItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(withTitle: "Open Desktop", action: #selector(openDesktop), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Snipzy", action: #selector(quit), keyEquivalent: "q")
@@ -81,6 +86,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         overlay?.close()
                         self?.finishCapture(result)
                     }
+                }
+            }
+        }
+    }
+
+    @objc private func drawOnScreen() {
+        guard !captureInProgress, !editors.contains(where: \.isDrawMode), let frame = DisplayUnderMouse.frame else { return }
+        captureInProgress = true
+        let rect = DisplayUnderMouse.captureRect(for: frame, primaryMaxY: DisplayUnderMouse.primaryMaxY)
+        DispatchQueue.global(qos: .userInitiated).async { [captureService] in
+            let result = Result { try captureService.captureDisplay(rect: rect) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                captureInProgress = false
+                switch result {
+                case let .success(captured):
+                    showEditor(EditorWindowController(image: captured.image, pasteboard: pasteboard, drawOn: frame))
+                case let .failure(error):
+                    showError(error)
                 }
             }
         }

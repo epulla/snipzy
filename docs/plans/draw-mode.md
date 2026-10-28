@@ -29,8 +29,8 @@ Ticket: PROJ-116 (Snipzy: draw mode).
   *Check:* unit test for the filename format; `make test`.
 - [x] 2. Freeze the display under the mouse during ⌘⇧4 (display snapshot + borderless overlay around `screencapture -i`).
   *Check:* `make test`; manual: play a video, ⌘⇧4 → screen is still while selecting, captured image matches, Esc removes the overlay.
-- [ ] 3. Draw mode overlay: ⌘⇧6 hotkey + menu item open a full-screen canvas over the frozen display with the editor toolbar; Esc leaves.
-  *Check:* `make test` (hotkey registration + Esc closes overlay); manual: draw with every tool incl. OCR, Esc exits.
+- [x] 3. Draw mode overlay: ⌘⇧6 hotkey + menu item open a full-screen canvas over the frozen display with the editor toolbar; Esc leaves.
+  *Check:* `make test` (Esc closes draw mode, not the editor); manual: draw with every tool incl. OCR, Esc exits.
 - [ ] 4. Enter opens the editor with editable annotations and copies the image; ⇧Enter saves via panel (cancel returns to drawing).
   *Check:* unit test that the editor opens with the passed annotations; manual: Enter → editor + clipboard, ⇧Enter → file saved as `snipzy-<datetime>.png`.
 - [ ] 5. README + help popover document draw mode and ⌘⇧6; delete this plan file.

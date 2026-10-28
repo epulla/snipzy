@@ -698,6 +698,32 @@ struct EditorTests {
         #expect(colorWell.colorWellStyle == .minimal)
     }
 
+    @Test
+    func escapeClosesDrawModeButNotEditorWindow() throws {
+        let editor = EditorWindowController(image: testImage())
+        editor.showWindow(nil)
+        try press(keyCode: 53, characters: "\u{1b}", in: editor)
+        #expect(editor.window?.isVisible == true)
+        editor.window?.close()
+
+        let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
+        var didClose = false
+        draw.onClose = { _ in didClose = true }
+        draw.showWindow(nil)
+        #expect(draw.isDrawMode)
+        #expect(draw.window?.canBecomeKey == true)
+        #expect(draw.window?.styleMask.contains(.titled) == false)
+        try press(keyCode: 53, characters: "\u{1b}", in: draw)
+        #expect(draw.window?.isVisible == false)
+        #expect(didClose)
+    }
+
+    private func press(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags = [], in controller: EditorWindowController) throws {
+        let window = try #require(controller.window)
+        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode))
+        try canvas(of: controller).keyDown(with: event)
+    }
+
     private func canvas(of controller: EditorWindowController) throws -> EditorCanvas {
         try #require(controller.window?.contentView?.subviews.compactMap { $0 as? EditorCanvas }.first)
     }

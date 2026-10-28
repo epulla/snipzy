@@ -214,6 +214,10 @@ final class EditorCanvas: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            commandHandler?(.escape)
+            return
+        }
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if event.modifierFlags.contains(.command) {
             switch key {
@@ -717,8 +721,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private var tooltipTask: Task<Void, Never>?
     private(set) var tooltip: NSView?
     var onClose: ((EditorWindowController) -> Void)?
+    let isDrawMode: Bool
 
-    init(image: NSImage, pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
+    init(image: NSImage, pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), drawOn frame: CGRect? = nil, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
         let alert = NSAlert()
         alert.messageText = "Discard annotated screenshot?"
         let discard = alert.addButton(withTitle: "Discard")
@@ -730,9 +735,19 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         self.pasteboard = pasteboard
         self.recognizer = recognizer
         self.confirmDiscard = confirmDiscard
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+        isDrawMode = frame != nil
+        let window: NSWindow
+        if let frame {
+            window = DrawModeWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            // Above the menu bar and Dock so the whole display reads as frozen.
+            window.level = .statusBar
+            window.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
+            window.setFrame(frame, display: false)
+        } else {
+            window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 650), styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false)
+            window.center()
+        }
         window.title = "Snipzy Editor"
-        window.center()
         super.init(window: window)
         window.delegate = self
         buildView()
@@ -749,6 +764,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             case .save: self?.saveImage()
             case .close: self?.window?.performClose(nil)
             case .help: self?.toggleHelp()
+            case .escape: self?.escape()
             }
         }
     }
@@ -910,10 +926,35 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         helpButton.setAccessibilityLabel("Help")
         addTooltip(to: helpButton, title: "Help", shortcut: "?")
         toolbar.addArrangedSubview(helpButton)
+        canvas.translatesAutoresizingMaskIntoConstraints = false
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        if isDrawMode {
+            contentView.addSubview(canvas)
+            let bar = NSVisualEffectView()
+            bar.material = .popover
+            bar.state = .active
+            bar.wantsLayer = true
+            bar.layer?.cornerRadius = 10
+            bar.translatesAutoresizingMaskIntoConstraints = false
+            bar.addSubview(toolbar)
+            contentView.addSubview(bar)
+            NSLayoutConstraint.activate([
+                canvas.topAnchor.constraint(equalTo: contentView.topAnchor),
+                canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+                toolbar.topAnchor.constraint(equalTo: bar.topAnchor),
+                toolbar.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+                toolbar.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+                toolbar.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+                bar.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+                bar.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+                bar.heightAnchor.constraint(equalToConstant: 48)
+            ])
+            return
+        }
         contentView.addSubview(toolbar)
         contentView.addSubview(canvas)
-        toolbar.translatesAutoresizingMaskIntoConstraints = false
-        canvas.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             toolbar.topAnchor.constraint(equalTo: contentView.topAnchor),
             toolbar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -1065,6 +1106,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     }
 
     @objc private func discard() { window?.performClose(nil) }
+
+    private func escape() {
+        if let popover {
+            popover.close()
+        } else if let helpPopover {
+            helpPopover.close()
+        } else if isDrawMode {
+            window?.close()
+        }
+    }
 
     private func showError(_ error: Error) {
         let alert = NSAlert(error: error)
@@ -1364,5 +1415,10 @@ private func keycap(_ key: String) -> NSView {
 }
 
 enum EditorCommand {
-    case undo, redo, copy, save, close, help
+    case undo, redo, copy, save, close, help, escape
+}
+
+/// Borderless windows refuse key status by default; draw mode needs it for shortcuts and text.
+final class DrawModeWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
 }
