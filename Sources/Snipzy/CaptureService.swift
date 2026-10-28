@@ -74,16 +74,12 @@ struct CaptureService: @unchecked Sendable {
     }
 
     func capture() throws -> CapturedImage {
-        try run(["-i", "-s", "-x", "-d"])
-    }
-
-    private func run(_ arguments: [String]) throws -> CapturedImage {
         let url = temporaryDirectory.appendingPathComponent("snipzy-\(UUID().uuidString).png")
         defer { try? fileManager.removeItem(at: url) }
 
         let result = try runner.run(
             executable: "/usr/sbin/screencapture",
-            arguments: arguments + [url.path]
+            arguments: ["-i", "-s", "-x", "-d", url.path]
         )
         guard result.status == 0 else {
             // Escape has no documented exit status. No output plus no stderr is

@@ -71,16 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func capture() {
         guard !captureInProgress else { return }
         captureInProgress = true
-        Task { @MainActor in
-            // Without a snapshot (e.g. no Screen Recording permission) selection runs on the live screen.
-            let overlay = await DisplayUnderMouse.snapshot().map { FreezeOverlay(image: $0.image, frame: $0.frame) }
-            overlay?.show()
-            DispatchQueue.global(qos: .userInitiated).async { [captureService, overlay] in
-                let result = Result { try captureService.capture() }
-                DispatchQueue.main.async { [weak self] in
-                    overlay?.close()
-                    self?.finishCapture(result)
-                }
+        DispatchQueue.global(qos: .userInitiated).async { [captureService] in
+            let result = Result { try captureService.capture() }
+            DispatchQueue.main.async { [weak self] in
+                self?.finishCapture(result)
             }
         }
     }

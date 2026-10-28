@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 
 ## Features
 
-- **Quick capture.** Start from the menu bar with `Cmd-Shift-4`. The display under the mouse freezes while you select.
+- **Quick capture.** Start from the menu bar with `Cmd-Shift-4`.
 - **Draw on screen.** Press `Cmd-Shift-6` to freeze the display under the mouse and annotate it in place.
 - **Mark up screenshots.** Use pen, highlighter, lines, arrows, rectangles, ellipses, and text.
 - **Hide private details.** Pixelate parts of an image.
