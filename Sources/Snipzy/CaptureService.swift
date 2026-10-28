@@ -74,12 +74,21 @@ struct CaptureService: @unchecked Sendable {
     }
 
     func capture() throws -> CapturedImage {
+        try run(["-i", "-s", "-x", "-d"])
+    }
+
+    /// Captures `rect` (global display points, top-left origin) without user interaction.
+    func captureDisplay(rect: CGRect) throws -> CapturedImage {
+        try run(["-x", "-R\(Int(rect.minX)),\(Int(rect.minY)),\(Int(rect.width)),\(Int(rect.height))"])
+    }
+
+    private func run(_ arguments: [String]) throws -> CapturedImage {
         let url = temporaryDirectory.appendingPathComponent("snipzy-\(UUID().uuidString).png")
         defer { try? fileManager.removeItem(at: url) }
 
         let result = try runner.run(
             executable: "/usr/sbin/screencapture",
-            arguments: ["-i", "-s", "-x", "-d", url.path]
+            arguments: arguments + [url.path]
         )
         guard result.status == 0 else {
             // Escape has no documented exit status. No output plus no stderr is

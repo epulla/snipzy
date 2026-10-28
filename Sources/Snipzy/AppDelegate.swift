@@ -66,38 +66,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func capture() {
         guard !captureInProgress else { return }
         captureInProgress = true
+        let frame = DisplayUnderMouse.frame
+        let rect = frame.map { DisplayUnderMouse.captureRect(for: $0, primaryMaxY: DisplayUnderMouse.primaryMaxY) }
         DispatchQueue.global(qos: .userInitiated).async { [captureService] in
-            let result = Result { try captureService.capture() }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.captureInProgress = false
-                switch result {
-                case let .success(captured):
-                    guard self.pasteboard.write(pngData: captured.pngData, tiffData: captured.tiffData) else {
-                        self.showError(AppError.clipboardWriteFailed)
-                        return
+            // Without a snapshot (e.g. no Screen Recording permission) selection runs on the live screen.
+            let snapshot = rect.flatMap { try? captureService.captureDisplay(rect: $0) }
+            DispatchQueue.main.async {
+                var overlay: FreezeOverlay?
+                if let snapshot, let frame { overlay = FreezeOverlay(image: snapshot.image, frame: frame) }
+                overlay?.show()
+                DispatchQueue.global(qos: .userInitiated).async { [overlay] in
+                    let result = Result { try captureService.capture() }
+                    DispatchQueue.main.async { [weak self] in
+                        overlay?.close()
+                        self?.finishCapture(result)
                     }
-                    let controller = EditorWindowController(image: captured.image, pasteboard: self.pasteboard)
-                    controller.onClose = { [weak self, weak controller] closedController in
-                        guard let controller else { return }
-                        self?.editors.removeAll { $0 === controller && $0 === closedController }
-                        if self?.editors.isEmpty == true { NSApp.setActivationPolicy(.accessory) }
-                    }
-                    self.editors.append(controller)
-                    NSApp.setActivationPolicy(.regular)
-                    controller.showWindow(self)
-                    // Ignore frontmost app so AppKit enables tooltips and cursor rects.
-                    DispatchQueue.main.async { [weak controller] in
-                        NSApp.activate(ignoringOtherApps: true)
-                        controller?.window?.makeKeyAndOrderFront(nil)
-                    }
-                case let .failure(error):
-                    if let captureError = error as? CaptureError, case .cancelled = captureError {
-                        break
-                    }
-                    self.showError(error)
                 }
             }
+        }
+    }
+
+    private func finishCapture(_ result: Result<CapturedImage, Error>) {
+        captureInProgress = false
+        switch result {
+        case let .success(captured):
+            guard pasteboard.write(pngData: captured.pngData, tiffData: captured.tiffData) else {
+                showError(AppError.clipboardWriteFailed)
+                return
+            }
+            showEditor(EditorWindowController(image: captured.image, pasteboard: pasteboard))
+        case let .failure(error):
+            if let captureError = error as? CaptureError, case .cancelled = captureError { return }
+            showError(error)
+        }
+    }
+
+    private func showEditor(_ controller: EditorWindowController) {
+        controller.onClose = { [weak self, weak controller] closedController in
+            guard let controller else { return }
+            self?.editors.removeAll { $0 === controller && $0 === closedController }
+            if self?.editors.isEmpty == true { NSApp.setActivationPolicy(.accessory) }
+        }
+        editors.append(controller)
+        NSApp.setActivationPolicy(.regular)
+        controller.showWindow(self)
+        // Ignore frontmost app so AppKit enables tooltips and cursor rects.
+        DispatchQueue.main.async { [weak controller] in
+            NSApp.activate(ignoringOtherApps: true)
+            controller?.window?.makeKeyAndOrderFront(nil)
         }
     }
 

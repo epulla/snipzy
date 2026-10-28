@@ -23,6 +23,19 @@ struct CaptureServiceTests {
     }
 
     @Test
+    func displayCaptureUsesRectWithoutInteraction() throws {
+        let runner = RecordingRunner()
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = CaptureService(runner: runner, temporaryDirectory: directory)
+        let result = try service.captureDisplay(rect: CGRect(x: -1440, y: 0, width: 1440, height: 900))
+
+        #expect(Array(runner.arguments.prefix(2)) == ["-x", "-R-1440,0,1440,900"])
+        #expect(!result.pngData.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: runner.outputURL!.path))
+    }
+
+    @Test
     func nonZeroCaptureStatusThrows() {
         let runner = RecordingRunner(status: 1, error: Data("device unavailable".utf8), writesOutput: true)
         do {
@@ -115,4 +128,13 @@ private final class RecordingRunner: ProcessRunning {
     }
 
     private static let validPNGData = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
+}
+
+@Suite
+struct DisplayUnderMouseTests {
+    @Test
+    func captureRectFlipsToTopLeftOrigin() {
+        #expect(DisplayUnderMouse.captureRect(for: CGRect(x: 0, y: 0, width: 1440, height: 900), primaryMaxY: 900) == CGRect(x: 0, y: 0, width: 1440, height: 900))
+        #expect(DisplayUnderMouse.captureRect(for: CGRect(x: 200, y: 900, width: 1920, height: 1080), primaryMaxY: 900) == CGRect(x: 200, y: -1080, width: 1920, height: 1080))
+    }
 }
