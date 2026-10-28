@@ -18,7 +18,8 @@ https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 
 ## Features
 
-- **Quick capture.** Start from the menu bar with `Cmd-Shift-4`.
+- **Quick capture.** Start from the menu bar with `Cmd-Shift-4`. The display under the mouse freezes while you select.
+- **Draw on screen.** Press `Cmd-Shift-6` to freeze the display under the mouse and annotate it in place.
 - **Mark up screenshots.** Use pen, highlighter, lines, arrows, rectangles, ellipses, and text.
 - **Hide private details.** Pixelate parts of an image.
 - **Read Text.** Copy text out of a screenshot with on-device recognition.
@@ -39,6 +40,8 @@ https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 | T | Text |
 | B | Pixelate |
 | O | Read Text |
+
+In draw mode, `Enter` opens the drawing in the editor (and copies it), `Shift-Enter` saves it as PNG, and `Esc` exits.
 
 ## Requirements
 
@@ -74,6 +77,10 @@ Keyboard > Keyboard Shortcuts > Screenshots` so Snipzy can receive it.
 1. Press `Cmd-Shift-4` and select an area.
 2. Edit the capture with the annotation tools.
 3. Copy the image or save it as PNG.
+
+To draw on screen, press `Cmd-Shift-6` and use the same tools. Press `Enter` to
+open the result in the editor, `Shift-Enter` to save it, or `Esc` to exit. Saved
+files are named `snipzy-<date>_<time>.png`.
 
 For OCR, press `O` or click the eye button, then select text. OCR runs on-device;
 edit or copy its result from the popover.

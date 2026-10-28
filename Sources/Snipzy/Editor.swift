@@ -1327,7 +1327,8 @@ final class HelpViewController: NSViewController {
     static let dedicationURL = URL(string: "https://www.linkedin.com/in/dom%C3%A9nica-soria-40bb12184/")!
     private static let shortcuts = [
         ("⌘Z", "Undo"), ("⇧⌘Z", "Redo"), ("⌘C", "Copy image"), ("⌘S", "Save PNG"),
-        ("⌘W", "Discard"), ("?", "Toggle help"), ("⇧", "Square / circle"), ("⇧⌘4", "New capture")
+        ("⌘W", "Discard"), ("?", "Toggle help"), ("⇧", "Square / circle"), ("⇧⌘4", "New capture"),
+        ("⇧⌘6", "Draw on screen"), ("esc", "Exit draw mode"), ("↩", "Draw: open editor"), ("⇧↩", "Draw: save")
     ]
     private let width: CGFloat = 320
 
