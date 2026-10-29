@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/epulla/snipzy/releases/download/v0.5.1/Snipzy-0.5.1.zip"><img src="https://img.shields.io/github/v/release/epulla/snipzy?style=for-the-badge&logo=apple&label=Download%20for%20macOS&color=2ea44f" height="48" alt="Download Snipzy for macOS"></a><br>
+  <a href="https://github.com/epulla/snipzy/releases/download/v0.5.3/Snipzy-0.5.3.zip"><img src="https://img.shields.io/github/v/release/epulla/snipzy?style=for-the-badge&logo=apple&label=Download%20for%20macOS&color=2ea44f" height="48" alt="Download Snipzy for macOS"></a><br>
   <sub>macOS 14 or later · Apple Silicon and Intel · <a href="#install">install steps</a> · <a href="https://github.com/epulla/snipzy/releases">all releases</a></sub>
 </p>
 
