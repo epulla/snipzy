@@ -159,11 +159,19 @@ final class EditorCanvas: NSView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
+        guard isTopmost(at: event.locationInWindow) else { return }
         cursor(at: convert(event.locationInWindow, from: nil)).set()
     }
 
     override func mouseMoved(with event: NSEvent) {
+        guard isTopmost(at: event.locationInWindow) else { return }
         cursor(at: convert(event.locationInWindow, from: nil)).set()
+    }
+
+    /// False over the floating draw-mode toolbar, which sets its own cursors.
+    private func isTopmost(at windowPoint: CGPoint) -> Bool {
+        guard let hit = window?.contentView?.hitTest(windowPoint) else { return true }
+        return hit.isDescendant(of: self)
     }
 
     func cursor(at viewPoint: CGPoint) -> NSCursor {
@@ -186,7 +194,7 @@ final class EditorCanvas: NSView {
     private func updateCursor() {
         guard let window else { return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        guard bounds.contains(point) else { return }
+        guard bounds.contains(point), isTopmost(at: window.mouseLocationOutsideOfEventStream) else { return }
         cursor(at: point).set()
     }
 
@@ -1492,10 +1500,16 @@ final class DraggableBar: NSVisualEffectView {
     var centerX: NSLayoutConstraint?
     var topInset: CGFloat = 0
     private var dragStart: (mouse: CGPoint, top: CGFloat, centerX: CGFloat)?
+    var cursor: NSCursor { dragStart == nil ? .openHand : .closedHand }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: cursor)
+    }
 
     override func mouseDown(with event: NSEvent) {
         guard let top, let centerX, let superview else { return }
         dragStart = (superview.convert(event.locationInWindow, from: nil), top.constant, centerX.constant)
+        cursor.set()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1505,10 +1519,13 @@ final class DraggableBar: NSVisualEffectView {
         let maxTop = max(topInset, superview.bounds.height - frame.height)
         centerX.constant = min(max(dragStart.centerX + point.x - dragStart.mouse.x, -maxCenterX), maxCenterX)
         top.constant = min(max(dragStart.top - (point.y - dragStart.mouse.y), topInset), maxTop)
+        cursor.set()
     }
 
     override func mouseUp(with event: NSEvent) {
         dragStart = nil
+        cursor.set()
+        window?.invalidateCursorRects(for: self)
     }
 }
 

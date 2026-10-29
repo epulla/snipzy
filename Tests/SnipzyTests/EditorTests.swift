@@ -787,6 +787,19 @@ struct EditorTests {
     }
 
     @Test
+    func drawModeToolbarShowsOpenHandThenClosedHandWhileDragging() throws {
+        let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 1600, height: 1000))
+        let bar = try toolbarBar(of: draw)
+        let window = try #require(draw.window)
+        let event = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: CGPoint(x: bar.frame.minX + 4, y: bar.frame.midY), modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        #expect(bar.cursor == .openHand)
+        bar.mouseDown(with: event)
+        #expect(bar.cursor == .closedHand)
+        bar.mouseUp(with: event)
+        #expect(bar.cursor == .openHand)
+    }
+
+    @Test
     func drawModeDiscardButtonExitsWithoutConfirmation() throws {
         var confirmations = 0
         let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100), confirmDiscard: { _, _ in confirmations += 1 })

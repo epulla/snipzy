@@ -20,5 +20,5 @@
 
 - [x] Drag the bar by a left grip handle or its empty background; buttons, slider, color well, and text field still work normally. Check: test drags the bar via grip and background and asserts it moved; test that clicking a tool button still selects the tool.
 - [x] Clamp the bar fully inside the screen and below `safeAreaInsets.top`. Check: test drags far past every edge and asserts the bar frame stays within bounds minus the notch inset.
-- [ ] Open-hand cursor over grip and background, closed-hand while dragging. Check: test asserts cursor rects/cursor on grip; `make build` and `make test` pass.
+- [x] Open-hand cursor over grip and background, closed-hand while dragging. Check: test asserts cursor rects/cursor on grip; `make build` and `make test` pass.
 - [ ] Hand off for manual test: `make bundle`, Erick tests draw mode drag on his Mac (mom's Mac if possible) and approves. Delete this plan file. Check: Erick's explicit approval; no tag or release until then.
