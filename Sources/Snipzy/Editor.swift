@@ -954,7 +954,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         if isDrawMode {
             contentView.addSubview(canvas)
-            let bar = NSVisualEffectView()
+            let grip = GripView(image: NSImage(systemSymbolName: "line.3.horizontal", accessibilityDescription: "Move toolbar") ?? NSImage())
+            grip.contentTintColor = .secondaryLabelColor
+            toolbar.insertArrangedSubview(grip, at: 0)
+            let bar = DraggableBar()
             bar.material = .popover
             bar.state = .active
             bar.wantsLayer = true
@@ -964,6 +967,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             contentView.addSubview(bar)
             // Notched displays swallow clicks in the camera housing band; keep the bar below it.
             let notchInset = NSScreen.screens.first { $0.frame == window.frame }?.safeAreaInsets.top ?? 0
+            let barTop = bar.topAnchor.constraint(equalTo: contentView.topAnchor, constant: notchInset + 12)
+            let barCenterX = bar.centerXAnchor.constraint(equalTo: contentView.centerXAnchor)
+            bar.top = barTop
+            bar.centerX = barCenterX
             NSLayoutConstraint.activate([
                 canvas.topAnchor.constraint(equalTo: contentView.topAnchor),
                 canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -973,8 +980,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
                 toolbar.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
                 toolbar.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
                 toolbar.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
-                bar.topAnchor.constraint(equalTo: contentView.topAnchor, constant: notchInset + 12),
-                bar.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+                barTop,
+                barCenterX,
                 bar.heightAnchor.constraint(equalToConstant: 48)
             ])
             return
@@ -1476,6 +1483,34 @@ private func keycap(_ key: String) -> NSView {
 
 enum EditorCommand {
     case undo, redo, copy, save, close, help, escape, enter, shiftEnter
+}
+
+/// Draw-mode toolbar container, dragged by its grip or empty background.
+final class DraggableBar: NSVisualEffectView {
+    var top: NSLayoutConstraint?
+    var centerX: NSLayoutConstraint?
+    private var dragStart: (mouse: CGPoint, top: CGFloat, centerX: CGFloat)?
+
+    override func mouseDown(with event: NSEvent) {
+        guard let top, let centerX, let superview else { return }
+        dragStart = (superview.convert(event.locationInWindow, from: nil), top.constant, centerX.constant)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragStart, let top, let centerX, let superview else { return }
+        let point = superview.convert(event.locationInWindow, from: nil)
+        centerX.constant = dragStart.centerX + point.x - dragStart.mouse.x
+        top.constant = dragStart.top - (point.y - dragStart.mouse.y)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragStart = nil
+    }
+}
+
+/// Lets clicks fall through to `DraggableBar` so the grip drags it.
+final class GripView: NSImageView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// Borderless windows refuse key status by default; draw mode needs it for shortcuts and text.

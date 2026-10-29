@@ -756,6 +756,23 @@ struct EditorTests {
     }
 
     @Test
+    func drawModeToolbarDragsByGripAndBackground() throws {
+        let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 1600, height: 1000))
+        let bar = try toolbarBar(of: draw)
+        let stack = try #require(bar.subviews.first as? NSStackView)
+        let grip = try #require(stack.arrangedSubviews.first as? GripView)
+        let spacer = try #require(stack.arrangedSubviews.first { type(of: $0) == NSView.self })
+        for handle in [grip, spacer] {
+            let start = bar.frame.origin
+            try drag(in: draw, from: handle.convert(CGPoint(x: handle.bounds.midX, y: handle.bounds.midY), to: nil), by: CGVector(dx: 40, dy: -30))
+            #expect(bar.frame.origin == CGPoint(x: start.x + 40, y: start.y - 30))
+        }
+        let tool = try #require(buttons(in: bar).first { $0.identifier?.rawValue == AnnotationTool.pen.rawValue })
+        let center = tool.convert(CGPoint(x: tool.bounds.midX, y: tool.bounds.midY), to: nil)
+        #expect(draw.window?.contentView?.hitTest(center) === tool)
+    }
+
+    @Test
     func drawModeDiscardButtonExitsWithoutConfirmation() throws {
         var confirmations = 0
         let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100), confirmDiscard: { _, _ in confirmations += 1 })
@@ -821,6 +838,25 @@ struct EditorTests {
         let window = try #require(controller.window)
         let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode))
         try canvas(of: controller).keyDown(with: event)
+    }
+
+    private func toolbarBar(of controller: EditorWindowController) throws -> DraggableBar {
+        let contentView = try #require(controller.window?.contentView)
+        contentView.layoutSubtreeIfNeeded()
+        return try #require(contentView.subviews.compactMap { $0 as? DraggableBar }.first)
+    }
+
+    private func drag(in controller: EditorWindowController, from location: CGPoint, by delta: CGVector) throws {
+        let window = try #require(controller.window)
+        let end = CGPoint(x: location.x + delta.dx, y: location.y + delta.dy)
+        let target = try #require(window.contentView?.hitTest(location))
+        func event(_ type: NSEvent.EventType, _ point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        target.mouseDown(with: try event(.leftMouseDown, location))
+        target.mouseDragged(with: try event(.leftMouseDragged, end))
+        target.mouseUp(with: try event(.leftMouseUp, end))
+        window.contentView?.layoutSubtreeIfNeeded()
     }
 
     private func canvas(of controller: EditorWindowController) throws -> EditorCanvas {
