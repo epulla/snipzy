@@ -971,6 +971,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             let barCenterX = bar.centerXAnchor.constraint(equalTo: contentView.centerXAnchor)
             bar.top = barTop
             bar.centerX = barCenterX
+            bar.topInset = notchInset
             NSLayoutConstraint.activate([
                 canvas.topAnchor.constraint(equalTo: contentView.topAnchor),
                 canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -1485,10 +1486,11 @@ enum EditorCommand {
     case undo, redo, copy, save, close, help, escape, enter, shiftEnter
 }
 
-/// Draw-mode toolbar container, dragged by its grip or empty background.
+/// Draw-mode toolbar container, dragged by its grip or empty background and kept on screen below `topInset`.
 final class DraggableBar: NSVisualEffectView {
     var top: NSLayoutConstraint?
     var centerX: NSLayoutConstraint?
+    var topInset: CGFloat = 0
     private var dragStart: (mouse: CGPoint, top: CGFloat, centerX: CGFloat)?
 
     override func mouseDown(with event: NSEvent) {
@@ -1499,8 +1501,10 @@ final class DraggableBar: NSVisualEffectView {
     override func mouseDragged(with event: NSEvent) {
         guard let dragStart, let top, let centerX, let superview else { return }
         let point = superview.convert(event.locationInWindow, from: nil)
-        centerX.constant = dragStart.centerX + point.x - dragStart.mouse.x
-        top.constant = dragStart.top - (point.y - dragStart.mouse.y)
+        let maxCenterX = max(0, (superview.bounds.width - frame.width) / 2)
+        let maxTop = max(topInset, superview.bounds.height - frame.height)
+        centerX.constant = min(max(dragStart.centerX + point.x - dragStart.mouse.x, -maxCenterX), maxCenterX)
+        top.constant = min(max(dragStart.top - (point.y - dragStart.mouse.y), topInset), maxTop)
     }
 
     override func mouseUp(with event: NSEvent) {

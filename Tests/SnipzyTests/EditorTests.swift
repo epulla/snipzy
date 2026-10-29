@@ -773,6 +773,20 @@ struct EditorTests {
     }
 
     @Test
+    func drawModeToolbarDragStaysOnScreenBelowNotch() throws {
+        let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 1600, height: 1000))
+        let bar = try toolbarBar(of: draw)
+        bar.topInset = 32
+        let bounds = try #require(draw.window?.contentView?.bounds)
+        for delta in [CGVector(dx: -5000, dy: 0), CGVector(dx: 5000, dy: 0), CGVector(dx: 0, dy: 5000), CGVector(dx: 0, dy: -5000)] {
+            let grip = try #require((bar.subviews.first as? NSStackView)?.arrangedSubviews.first)
+            try drag(in: draw, from: grip.convert(CGPoint(x: grip.bounds.midX, y: grip.bounds.midY), to: nil), by: delta)
+            #expect(bar.frame.minX >= 0 && bar.frame.maxX <= bounds.maxX && bar.frame.minY >= 0)
+            #expect(bar.frame.maxY <= bounds.maxY - 32)
+        }
+    }
+
+    @Test
     func drawModeDiscardButtonExitsWithoutConfirmation() throws {
         var confirmations = 0
         let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100), confirmDiscard: { _, _ in confirmations += 1 })
