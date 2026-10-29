@@ -1502,8 +1502,11 @@ final class DraggableBar: NSVisualEffectView {
     private var dragStart: (mouse: CGPoint, top: CGFloat, centerX: CGFloat)?
     var cursor: NSCursor { dragStart == nil ? .openHand : .closedHand }
 
+    // Only non-control areas: overlapping cursor rects with HoverButton's pointing hand are undefined.
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: cursor)
+        for view in (subviews.first as? NSStackView)?.arrangedSubviews ?? [] where view is GripView || !(view is NSControl) {
+            addCursorRect(convert(view.bounds, from: view), cursor: cursor)
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
