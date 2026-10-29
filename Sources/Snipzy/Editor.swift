@@ -962,6 +962,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             bar.translatesAutoresizingMaskIntoConstraints = false
             bar.addSubview(toolbar)
             contentView.addSubview(bar)
+            // Notched displays swallow clicks in the camera housing band; keep the bar below it.
+            let notchInset = NSScreen.screens.first { $0.frame == window.frame }?.safeAreaInsets.top ?? 0
             NSLayoutConstraint.activate([
                 canvas.topAnchor.constraint(equalTo: contentView.topAnchor),
                 canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -971,7 +973,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
                 toolbar.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
                 toolbar.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
                 toolbar.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
-                bar.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+                bar.topAnchor.constraint(equalTo: contentView.topAnchor, constant: notchInset + 12),
                 bar.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
                 bar.heightAnchor.constraint(equalToConstant: 48)
             ])

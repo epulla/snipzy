@@ -745,6 +745,17 @@ struct EditorTests {
     }
 
     @Test
+    func drawModeToolbarSitsBelowNotch() throws {
+        for screen in NSScreen.screens {
+            let draw = EditorWindowController(image: testImage(), drawOn: screen.frame)
+            let contentView = try #require(draw.window?.contentView)
+            contentView.layoutSubtreeIfNeeded()
+            let bar = try #require(contentView.subviews.first { $0 is NSVisualEffectView })
+            #expect(bar.frame.maxY <= contentView.bounds.height - screen.safeAreaInsets.top - 12)
+        }
+    }
+
+    @Test
     func drawModeDiscardButtonExitsWithoutConfirmation() throws {
         var confirmations = 0
         let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100), confirmDiscard: { _, _ in confirmations += 1 })
