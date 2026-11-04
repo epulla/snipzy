@@ -141,6 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let overlay = EditorWindowController(image: snapshot.image, pasteboard: pasteboard, drawOn: snapshot.frame)
             overlay.onOpenInEditor = { [weak self] image, annotations, historyID in
                 guard let self else { return }
+                if let historyID { session.store(historyID, image: image, annotations: annotations) }
                 let editor = EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard, session: session)
                 editor.historyID = historyID
                 showEditor(editor)

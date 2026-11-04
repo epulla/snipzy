@@ -994,14 +994,18 @@ struct EditorTests {
     @Test
     func historyPanelListsEntriesAndRefreshesOnNewCapture() throws {
         let (session, ids, directory) = try historySession(count: 2)
+        let suite = "SnipzyPanel-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
         defer {
             try? FileManager.default.removeItem(at: directory)
-            UserDefaults.standard.removeObject(forKey: EditorWindowController.historyPanelKey)
+            defaults.removePersistentDomain(forName: suite)
         }
-        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session, defaults: defaults)
         controller.historyID = ids[1]
-        controller.toggleHistoryPanel()
         let panel = try #require(controller.historyPanel)
+        #expect(panel.isHidden)
+        controller.toggleHistoryPanel()
+        #expect(defaults.bool(forKey: EditorWindowController.historyPanelKey))
         func rows() -> [NSButton] { buttons(in: panel.documentView) }
         #expect(!panel.isHidden)
         #expect(rows().map { $0.identifier?.rawValue } == ids)
@@ -1016,6 +1020,66 @@ struct EditorTests {
 
         controller.toggleHistoryPanel()
         #expect(panel.isHidden)
+        #expect(!defaults.bool(forKey: EditorWindowController.historyPanelKey))
+    }
+
+    @Test
+    func panelVisibilityRestoresFromDefaults() throws {
+        let (session, _, directory) = try historySession(count: 1)
+        let suite = "SnipzyPanel-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            defaults.removePersistentDomain(forName: suite)
+        }
+        defaults.set(true, forKey: EditorWindowController.historyPanelKey)
+
+        let controller = EditorWindowController(image: testImage(), session: session, defaults: defaults)
+
+        #expect(controller.historyPanel?.isHidden == false)
+    }
+
+    @Test
+    func copyKeepsSessionInSyncWithoutSwitching() throws {
+        let (session, ids, directory) = try historySession(count: 1)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
+        controller.historyID = ids[0]
+        AppDelegate.trackHistory(controller, in: session.history)
+        try canvas(of: controller).addText("note", at: CGPoint(x: 0.5, y: 0.5))
+
+        try canvas(of: controller).commandHandler?(.copy)
+
+        #expect(session.state(for: ids[0])?.annotations.map(\.text) == ["note"])
+    }
+
+    @Test
+    func reopenAfterSwitchAndCopyRestoresLatestEdits() throws {
+        let (session, ids, directory) = try historySession(count: 2)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
+        controller.historyID = ids[0]
+        AppDelegate.trackHistory(controller, in: session.history)
+        let canvas = try canvas(of: controller)
+        canvas.addText("note", at: CGPoint(x: 0.5, y: 0.5))
+        controller.showEntry(ids[1])
+        controller.showEntry(ids[0])
+        canvas.updateText(at: 0, text: "edited")
+        canvas.commandHandler?(.copy)
+
+        #expect(session.state(for: ids[0])?.annotations.map(\.text) == ["edited"])
+    }
+
+    @Test
+    func uncopiedEditsAreNotKeptInSession() throws {
+        let (session, ids, directory) = try historySession(count: 2)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session, autoCopy: { false })
+        controller.historyID = ids[0]
+        AppDelegate.trackHistory(controller, in: session.history)
+        try canvas(of: controller).addText("draft", at: CGPoint(x: 0.5, y: 0.5))
+
+        #expect(session.state(for: ids[0])?.annotations.isEmpty == true)
     }
 
     @Test

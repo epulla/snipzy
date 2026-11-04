@@ -778,6 +778,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private let historyList = NSStackView()
     private var historyPanelWidth: NSLayoutConstraint?
     static let historyPanelKey = "historyPanelVisible"
+    private let defaults: UserDefaults
     var onClose: ((EditorWindowController) -> Void)?
     let isDrawMode: Bool
     var onOpenInEditor: ((NSImage, [Annotation], String?) -> Void)?
@@ -786,7 +787,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     var historyID: String? { didSet { refreshHistory() } }
     var hasAnnotations: Bool { !canvas.annotations.isEmpty || pendingText?.field.stringValue.isEmpty == false }
 
-    init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), session: HistorySession? = nil, drawOn frame: CGRect? = nil, autoCopy: @escaping () -> Bool = { UserDefaults.standard.bool(forKey: SettingsWindowController.autoCopyKey) }, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
+    init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), session: HistorySession? = nil, defaults: UserDefaults = .standard, drawOn frame: CGRect? = nil, autoCopy: @escaping () -> Bool = { UserDefaults.standard.bool(forKey: SettingsWindowController.autoCopyKey) }, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
         let alert = NSAlert()
         alert.messageText = "Discard annotated screenshot?"
         let discard = alert.addButton(withTitle: "Discard")
@@ -799,6 +800,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         self.recognizer = recognizer
         self.confirmDiscard = confirmDiscard
         self.session = frame == nil ? session : nil
+        self.defaults = defaults
         isDrawMode = frame != nil
         let window: NSWindow
         if let frame {
@@ -843,7 +845,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         }
         if let history = self.session?.history {
             NotificationCenter.default.addObserver(self, selector: #selector(historyDidChange(_:)), name: .captureHistoryDidChange, object: history)
-            setHistoryPanelVisible(UserDefaults.standard.bool(forKey: Self.historyPanelKey))
+            setHistoryPanelVisible(defaults.bool(forKey: Self.historyPanelKey))
         }
     }
 
@@ -1113,7 +1115,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         historyPanel.isHidden = !visible
         historyPanelWidth?.constant = visible ? 180 : 0
         historyButton?.state = visible ? .on : .off
-        UserDefaults.standard.set(visible, forKey: Self.historyPanelKey)
+        defaults.set(visible, forKey: Self.historyPanelKey)
         refreshHistory()
     }
 
@@ -1178,8 +1180,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         finishText(commit: true)
         ocrTask?.cancel()
         popover?.close()
-        if canvas.isModified, let png = canvas.renderedPNGData() { onRendered?(png) }
-        if let current = historyID { session.store(current, image: canvas.image, annotations: canvas.annotations) }
+        if canvas.isModified, let png = canvas.renderedPNGData() { publish(png) }
         guard let state = session.state(for: id) else { return }
         canvas.load(image: state.image, annotations: state.annotations)
         historyID = id
@@ -1296,17 +1297,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             showError(AppError.imageEncodingFailed)
             return
         }
-        onRendered?(png)
+        publish(png)
         guard pasteboard.write(pngData: png, tiffData: tiff) else {
             showError(AppError.clipboardWriteFailed)
             return
         }
     }
 
+    /// History gets the flattened PNG; the session keeps the same state editable, so reopening matches what was rendered.
+    private func publish(_ png: Data) {
+        onRendered?(png)
+        if let session, let historyID { session.store(historyID, image: canvas.image, annotations: canvas.annotations) }
+    }
+
     // Auto-copy is silent, so failures are ignored rather than interrupting editing.
     private func writeImageToPasteboard() {
         guard let png = canvas.renderedPNGData(), let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation else { return }
-        onRendered?(png)
+        publish(png)
         pasteboard.write(pngData: png, tiffData: tiff)
     }
 
@@ -1318,7 +1325,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private func save() -> Bool {
         finishText(commit: true)
         guard let png = canvas.renderedPNGData() else { return false }
-        onRendered?(png)
+        publish(png)
         let panel = NSSavePanel()
         panel.nameFieldStringValue = Self.defaultFileName()
         panel.allowedContentTypes = [.png]
