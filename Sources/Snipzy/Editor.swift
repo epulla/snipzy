@@ -85,10 +85,27 @@ struct Annotation {
     var fontSize: CGFloat = 22
 }
 
-final class HoverButton: NSButton {
+class HoverButton: NSButton {
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
     }
+}
+
+/// Round button floating over the canvas: faint until hovered so it never hides the screenshot.
+final class GhostButton: HoverButton {
+    static let idleAlpha: CGFloat = 0.3
+
+    // Hidden while hovered gets no mouseExited; reappear faint.
+    override var isHidden: Bool { didSet { if isHidden { alphaValue = Self.idleAlpha } } }
+
+    override func updateTrackingAreas() {
+        trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) { alphaValue = 1 }
+    override func mouseExited(with event: NSEvent) { alphaValue = Self.idleAlpha }
 }
 
 final class ColorDot: NSView {
@@ -772,7 +789,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private var olderButton: NSButton?
     private var newerButton: NSButton?
     private var historyButton: NSButton?
-    private(set) var historyPanel: NSView?
+    private(set) var historyPanel: NSScrollView?
     private let historyList = NSStackView()
     private var historyPanelWidth: NSLayoutConstraint?
     static let historyPanelKey = "historyPanelVisible"
@@ -1071,30 +1088,38 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor).isActive = true
             return
         }
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
+        let panel = NSScrollView()
+        panel.hasVerticalScroller = true
+        panel.drawsBackground = false
         historyList.orientation = .vertical
         historyList.spacing = 8
         historyList.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         historyList.translatesAutoresizingMaskIntoConstraints = false
-        scroll.documentView = historyList
+        panel.documentView = historyList
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(panel)
+        // Siblings above the canvas, not subviews: rendering draws the image directly, so they never reach the PNG.
         let arrows = [("Newer capture", "chevron.up", "↑", #selector(showNewerEntry)), ("Older capture", "chevron.down", "↓", #selector(showOlderEntry))].map { title, symbol, shortcut, action in
-            let button = HoverButton(title: title, target: self, action: action)
-            button.bezelStyle = .texturedRounded
-            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            let button = GhostButton(title: title, target: self, action: action)
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?.withSymbolConfiguration(.init(pointSize: 15, weight: .semibold))
             button.imagePosition = .imageOnly
+            button.isBordered = false
+            button.contentTintColor = .white
+            button.wantsLayer = true
+            button.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
+            button.layer?.cornerRadius = 16
+            button.alphaValue = GhostButton.idleAlpha
+            button.translatesAutoresizingMaskIntoConstraints = false
             addTooltip(to: button, title: title, shortcut: shortcut)
+            contentView.addSubview(button)
+            NSLayoutConstraint.activate([
+                button.widthAnchor.constraint(equalToConstant: 32),
+                button.heightAnchor.constraint(equalToConstant: 32),
+                button.centerXAnchor.constraint(equalTo: canvas.centerXAnchor)
+            ])
             return button
         }
         (newerButton, olderButton) = (arrows[0], arrows[1])
-        let panel = NSView()
-        panel.translatesAutoresizingMaskIntoConstraints = false
-        for view in [arrows[0], scroll, arrows[1]] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            panel.addSubview(view)
-        }
-        contentView.addSubview(panel)
         let width = panel.widthAnchor.constraint(equalToConstant: 0)
         historyPanel = panel
         historyPanelWidth = width
@@ -1104,17 +1129,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             panel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             panel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             canvas.trailingAnchor.constraint(equalTo: panel.leadingAnchor),
-            arrows[0].topAnchor.constraint(equalTo: panel.topAnchor, constant: 6),
-            arrows[0].centerXAnchor.constraint(equalTo: panel.centerXAnchor),
-            scroll.topAnchor.constraint(equalTo: arrows[0].bottomAnchor, constant: 6),
-            scroll.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
-            arrows[1].topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 6),
-            arrows[1].bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -6),
-            arrows[1].centerXAnchor.constraint(equalTo: panel.centerXAnchor),
-            historyList.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
-            historyList.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            historyList.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)
+            arrows[0].topAnchor.constraint(equalTo: canvas.topAnchor, constant: 10),
+            arrows[1].bottomAnchor.constraint(equalTo: canvas.bottomAnchor, constant: -10),
+            historyList.topAnchor.constraint(equalTo: panel.contentView.topAnchor),
+            historyList.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor),
+            historyList.widthAnchor.constraint(equalTo: panel.contentView.widthAnchor)
         ])
     }
 
@@ -1149,8 +1168,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         guard let session else { return }
         let entries = session.history.entries()
         let index = historyID.flatMap { id in entries.firstIndex { $0.id == id } }
-        olderButton?.isEnabled = index.map { $0 < entries.count - 1 } ?? false
-        newerButton?.isEnabled = index.map { $0 > 0 } ?? false
+        olderButton?.isHidden = !(index.map { $0 < entries.count - 1 } ?? false)
+        newerButton?.isHidden = !(index.map { $0 > 0 } ?? false)
         guard let historyPanel, !historyPanel.isHidden else { return }
         historyList.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for entry in entries {
@@ -1255,7 +1274,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         let size = content.fittingSize
         let anchor = view.convert(view.bounds, to: contentView)
         let x = min(max(anchor.midX - size.width / 2, 6), contentView.bounds.width - size.width - 6)
-        bubble.frame = CGRect(x: x, y: anchor.minY - size.height - 4, width: size.width, height: size.height)
+        let below = anchor.minY - size.height - 4
+        bubble.frame = CGRect(x: x, y: below < 0 ? anchor.maxY + 4 : below, width: size.width, height: size.height)
         contentView.addSubview(bubble)
         tooltip = bubble
     }

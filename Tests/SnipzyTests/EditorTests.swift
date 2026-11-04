@@ -1008,8 +1008,8 @@ struct EditorTests {
         #expect(panel.isHidden)
         controller.toggleHistoryPanel()
         #expect(defaults.bool(forKey: EditorWindowController.historyPanelKey))
-        func rows() -> [NSButton] { buttons(in: panel).filter { $0.identifier != nil } }
-        func arrow(_ title: String) throws -> NSButton { try #require(buttons(in: panel).first { $0.title == title }) }
+        func rows() -> [NSButton] { buttons(in: panel.documentView) }
+        func arrow(_ title: String) throws -> NSButton { try #require(buttons(in: controller.window?.contentView).first { $0 is GhostButton && $0.title == title }) }
         #expect(!panel.isHidden)
         #expect(rows().map { $0.identifier?.rawValue } == ids)
         #expect(rows().map { $0.accessibilityValue() as? String } == [nil, "Current"])
@@ -1018,8 +1018,8 @@ struct EditorTests {
         let newID = try #require(session.history.add(png))
         #expect(rows().first?.identifier?.rawValue == newID)
 
-        #expect(try arrow("Newer capture").isEnabled)
-        #expect(try arrow("Older capture").isEnabled == false)
+        #expect(try arrow("Newer capture").isHidden == false)
+        #expect(try arrow("Older capture").isHidden)
         rows()[1].performClick(nil)
         #expect(controller.historyID == ids[0])
         try arrow("Older capture").performClick(nil)
@@ -1029,7 +1029,32 @@ struct EditorTests {
 
         controller.toggleHistoryPanel()
         #expect(panel.isHidden)
+        #expect(try arrow("Older capture").isHidden == false)
         #expect(!defaults.bool(forKey: EditorWindowController.historyPanelKey))
+    }
+
+    @Test
+    func canvasArrowsFloatOverImageWithoutRenderingOrBlockingClicks() throws {
+        let (session, ids, directory) = try historySession(count: 3)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
+        controller.historyID = ids[1]
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        let contentView = try #require(controller.window?.contentView)
+        contentView.layoutSubtreeIfNeeded()
+        let canvas = try canvas(of: controller)
+        let arrows = buttons(in: contentView).compactMap { $0 as? GhostButton }
+        let baseline = try #require(EditorCanvas(image: testImage()).renderedPNGData())
+
+        #expect(arrows.count == 2)
+        for arrow in arrows {
+            #expect(canvas.frame.contains(arrow.frame))
+            #expect(abs(arrow.frame.midX - canvas.frame.midX) < 1)
+            #expect(arrow.alphaValue == GhostButton.idleAlpha)
+            #expect(contentView.hitTest(CGPoint(x: arrow.frame.midX, y: arrow.frame.midY)) === arrow)
+        }
+        #expect(contentView.hitTest(CGPoint(x: canvas.frame.midX, y: canvas.frame.midY)) === canvas)
+        #expect(canvas.renderedPNGData() == baseline)
     }
 
     @Test
