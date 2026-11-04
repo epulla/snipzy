@@ -959,16 +959,18 @@ struct EditorTests {
         let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
         controller.historyID = ids[0]
 
-        try press(keyCode: 123, characters: "\u{F702}", in: controller)
-        #expect(controller.historyID == ids[1])
-        try press(keyCode: 33, characters: "[", modifiers: .command, in: controller)
+        try press(keyCode: 125, characters: "\u{F701}", in: controller)
+        try press(keyCode: 125, characters: "\u{F701}", in: controller)
         #expect(controller.historyID == ids[2])
-        try press(keyCode: 123, characters: "\u{F702}", in: controller)
+        try press(keyCode: 125, characters: "\u{F701}", in: controller)
         #expect(controller.historyID == ids[2])
-        try press(keyCode: 124, characters: "\u{F703}", in: controller)
-        try press(keyCode: 30, characters: "]", modifiers: .command, in: controller)
+        try press(keyCode: 126, characters: "\u{F700}", in: controller)
+        try press(keyCode: 126, characters: "\u{F700}", in: controller)
         #expect(controller.historyID == ids[0])
-        try press(keyCode: 124, characters: "\u{F703}", in: controller)
+        try press(keyCode: 126, characters: "\u{F700}", in: controller)
+        #expect(controller.historyID == ids[0])
+        try press(keyCode: 123, characters: "\u{F702}", in: controller)
+        try press(keyCode: 33, characters: "[", modifiers: .command, in: controller)
         #expect(controller.historyID == ids[0])
     }
 
@@ -985,7 +987,7 @@ struct EditorTests {
         try click(canvas, at: CGPoint(x: 0.2, y: 0.2))
         #expect(!canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
 
-        try press(keyCode: 123, characters: "\u{F702}", in: controller)
+        try press(keyCode: 125, characters: "\u{F701}", in: controller)
 
         #expect(controller.historyID == ids[0])
         #expect(!canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
@@ -1006,7 +1008,8 @@ struct EditorTests {
         #expect(panel.isHidden)
         controller.toggleHistoryPanel()
         #expect(defaults.bool(forKey: EditorWindowController.historyPanelKey))
-        func rows() -> [NSButton] { buttons(in: panel.documentView) }
+        func rows() -> [NSButton] { buttons(in: panel).filter { $0.identifier != nil } }
+        func arrow(_ title: String) throws -> NSButton { try #require(buttons(in: panel).first { $0.title == title }) }
         #expect(!panel.isHidden)
         #expect(rows().map { $0.identifier?.rawValue } == ids)
         #expect(rows().map { $0.accessibilityValue() as? String } == [nil, "Current"])
@@ -1015,7 +1018,13 @@ struct EditorTests {
         let newID = try #require(session.history.add(png))
         #expect(rows().first?.identifier?.rawValue == newID)
 
+        #expect(try arrow("Newer capture").isEnabled)
+        #expect(try arrow("Older capture").isEnabled == false)
         rows()[1].performClick(nil)
+        #expect(controller.historyID == ids[0])
+        try arrow("Older capture").performClick(nil)
+        #expect(controller.historyID == ids[1])
+        try arrow("Newer capture").performClick(nil)
         #expect(controller.historyID == ids[0])
 
         controller.toggleHistoryPanel()

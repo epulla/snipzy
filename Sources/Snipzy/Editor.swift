@@ -255,15 +255,13 @@ final class EditorCanvas: NSView {
             commandHandler?(event.modifierFlags.contains(.shift) ? .shiftEnter : .enter)
             return
         }
-        if event.keyCode == 123 || event.keyCode == 124, !event.modifierFlags.contains(.command) {
-            commandHandler?(event.keyCode == 123 ? .previous : .next)
+        if event.keyCode == 125 || event.keyCode == 126, !event.modifierFlags.contains(.command) {
+            commandHandler?(event.keyCode == 125 ? .previous : .next)
             return
         }
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if event.modifierFlags.contains(.command) {
             switch key {
-            case "[": commandHandler?(.previous)
-            case "]": commandHandler?(.next)
             case "z": commandHandler?(event.modifierFlags.contains(.shift) ? .redo : .undo)
             case "c": commandHandler?(.copy)
             case "s": commandHandler?(.save)
@@ -774,7 +772,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private var olderButton: NSButton?
     private var newerButton: NSButton?
     private var historyButton: NSButton?
-    private(set) var historyPanel: NSScrollView?
+    private(set) var historyPanel: NSView?
     private let historyList = NSStackView()
     private var historyPanelWidth: NSLayoutConstraint?
     static let historyPanelKey = "historyPanelVisible"
@@ -987,22 +985,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         let spacer = NSView()
         toolbar.addArrangedSubview(spacer)
         if session != nil {
-            let navigation: [(String, String, String?, Selector)] = [
-                ("Older capture", "chevron.left", "←", #selector(showOlderEntry)),
-                ("History", "clock.arrow.circlepath", nil, #selector(toggleHistoryPanel)),
-                ("Newer capture", "chevron.right", "→", #selector(showNewerEntry))
-            ]
-            let buttons = navigation.map { title, symbol, shortcut, action in
-                let button = HoverButton(title: title, target: self, action: action)
-                button.bezelStyle = .texturedRounded
-                button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-                button.imagePosition = .imageOnly
-                addTooltip(to: button, title: title, shortcut: shortcut)
-                toolbar.addArrangedSubview(button)
-                return button
-            }
-            buttons[1].setButtonType(.pushOnPushOff)
-            (olderButton, historyButton, newerButton) = (buttons[0], buttons[1], buttons[2])
+            let button = HoverButton(title: "History", target: self, action: #selector(toggleHistoryPanel))
+            button.bezelStyle = .texturedRounded
+            button.image = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "History")
+            button.imagePosition = .imageOnly
+            button.setButtonType(.pushOnPushOff)
+            addTooltip(to: button, title: "History")
+            toolbar.addArrangedSubview(button)
+            historyButton = button
             let separator = NSBox()
             separator.boxType = .separator
             separator.widthAnchor.constraint(equalToConstant: 1).isActive = true
@@ -1081,15 +1071,29 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor).isActive = true
             return
         }
-        let panel = NSScrollView()
-        panel.hasVerticalScroller = true
-        panel.drawsBackground = false
-        panel.translatesAutoresizingMaskIntoConstraints = false
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
         historyList.orientation = .vertical
         historyList.spacing = 8
         historyList.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         historyList.translatesAutoresizingMaskIntoConstraints = false
-        panel.documentView = historyList
+        scroll.documentView = historyList
+        let arrows = [("Newer capture", "chevron.up", "↑", #selector(showNewerEntry)), ("Older capture", "chevron.down", "↓", #selector(showOlderEntry))].map { title, symbol, shortcut, action in
+            let button = HoverButton(title: title, target: self, action: action)
+            button.bezelStyle = .texturedRounded
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            button.imagePosition = .imageOnly
+            addTooltip(to: button, title: title, shortcut: shortcut)
+            return button
+        }
+        (newerButton, olderButton) = (arrows[0], arrows[1])
+        let panel = NSView()
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        for view in [arrows[0], scroll, arrows[1]] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            panel.addSubview(view)
+        }
         contentView.addSubview(panel)
         let width = panel.widthAnchor.constraint(equalToConstant: 0)
         historyPanel = panel
@@ -1100,9 +1104,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             panel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             panel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             canvas.trailingAnchor.constraint(equalTo: panel.leadingAnchor),
-            historyList.topAnchor.constraint(equalTo: panel.contentView.topAnchor),
-            historyList.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor),
-            historyList.widthAnchor.constraint(equalTo: panel.contentView.widthAnchor)
+            arrows[0].topAnchor.constraint(equalTo: panel.topAnchor, constant: 6),
+            arrows[0].centerXAnchor.constraint(equalTo: panel.centerXAnchor),
+            scroll.topAnchor.constraint(equalTo: arrows[0].bottomAnchor, constant: 6),
+            scroll.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            arrows[1].topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 6),
+            arrows[1].bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -6),
+            arrows[1].centerXAnchor.constraint(equalTo: panel.centerXAnchor),
+            historyList.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            historyList.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            historyList.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor)
         ])
     }
 
@@ -1556,7 +1568,7 @@ final class HelpViewController: NSViewController {
         ("⌘Z", "Undo"), ("⇧⌘Z", "Redo"), ("⌘C", "Copy image"), ("⌘S", "Save PNG"),
         ("⌘W", "Discard"), ("?", "Toggle help"), ("⇧", "Square / circle"), ("⇧⌘4", "New capture"),
         ("⇧⌘6", "Draw on screen"), ("esc", "Exit draw mode"), ("↩", "Draw: open editor"), ("⇧↩", "Draw: save"),
-        ("←", "Older capture"), ("→", "Newer capture")
+        ("↑", "Newer capture"), ("↓", "Older capture")
     ]
     private let width: CGFloat = 320
 
