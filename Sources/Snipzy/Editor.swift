@@ -95,6 +95,21 @@ class HoverButton: NSButton {
 final class GhostButton: HoverButton {
     static let idleAlpha: CGFloat = 0.3
 
+    convenience init(title: String, symbol: String, diameter: CGFloat, target: AnyObject, action: Selector) {
+        self.init(title: title, target: target, action: action)
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?.withSymbolConfiguration(.init(pointSize: diameter * 0.47, weight: .semibold))
+        imagePosition = .imageOnly
+        isBordered = false
+        contentTintColor = .white
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
+        layer?.cornerRadius = diameter / 2
+        alphaValue = Self.idleAlpha
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: diameter).isActive = true
+        heightAnchor.constraint(equalToConstant: diameter).isActive = true
+    }
+
     // Hidden while hovered gets no mouseExited; reappear faint.
     override var isHidden: Bool { didSet { if isHidden { alphaValue = Self.idleAlpha } } }
 
@@ -1100,23 +1115,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         contentView.addSubview(panel)
         // Siblings above the canvas, not subviews: rendering draws the image directly, so they never reach the PNG.
         let arrows = [("Newer capture", "chevron.up", "↑", #selector(showNewerEntry)), ("Older capture", "chevron.down", "↓", #selector(showOlderEntry))].map { title, symbol, shortcut, action in
-            let button = GhostButton(title: title, target: self, action: action)
-            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?.withSymbolConfiguration(.init(pointSize: 15, weight: .semibold))
-            button.imagePosition = .imageOnly
-            button.isBordered = false
-            button.contentTintColor = .white
-            button.wantsLayer = true
-            button.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
-            button.layer?.cornerRadius = 16
-            button.alphaValue = GhostButton.idleAlpha
-            button.translatesAutoresizingMaskIntoConstraints = false
+            let button = GhostButton(title: title, symbol: symbol, diameter: 32, target: self, action: action)
             addTooltip(to: button, title: title, shortcut: shortcut)
             contentView.addSubview(button)
-            NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(equalToConstant: 32),
-                button.heightAnchor.constraint(equalToConstant: 32),
-                button.centerXAnchor.constraint(equalTo: canvas.centerXAnchor)
-            ])
+            button.centerXAnchor.constraint(equalTo: canvas.centerXAnchor).isActive = true
             return button
         }
         (newerButton, olderButton) = (arrows[0], arrows[1])
@@ -1186,7 +1188,31 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             historyList.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: historyList.widthAnchor, constant: -16).isActive = true
             row.heightAnchor.constraint(equalToConstant: Self.thumbnailSize.height + 26).isActive = true
+            // A subview button gets its own clicks, so deleting never also selects the row.
+            let trash = GhostButton(title: "Delete capture", symbol: "trash", diameter: 22, target: self, action: #selector(deleteHistoryEntry(_:)))
+            trash.identifier = row.identifier
+            row.addSubview(trash)
+            trash.topAnchor.constraint(equalTo: row.topAnchor, constant: 4).isActive = true
+            trash.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -4).isActive = true
         }
+    }
+
+    /// Deleting the shown entry moves to the next older one (else newer); with none left the image stays, detached from history.
+    @objc private func deleteHistoryEntry(_ sender: NSButton) {
+        guard let session, let id = sender.identifier?.rawValue else { return }
+        let entries = session.history.entries()
+        guard id == historyID, let index = entries.firstIndex(where: { $0.id == id }) else {
+            session.remove(id)
+            return
+        }
+        let next = entries.indices.contains(index + 1) ? entries[index + 1] : entries.indices.contains(index - 1) ? entries[index - 1] : nil
+        session.remove(id)
+        guard let next else {
+            historyID = nil
+            return
+        }
+        finishText(commit: false)
+        load(next.id)
     }
 
     @objc private func selectHistoryEntry(_ sender: NSButton) {
@@ -1209,10 +1235,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     func showEntry(_ id: String) {
         guard let session, id != historyID else { return }
         finishText(commit: true)
+        if canvas.isModified, let png = canvas.renderedPNGData() { publish(png) }
+        load(id)
+    }
+
+    private func load(_ id: String) {
+        guard let state = session?.state(for: id) else { return }
         ocrTask?.cancel()
         popover?.close()
-        if canvas.isModified, let png = canvas.renderedPNGData() { publish(png) }
-        guard let state = session.state(for: id) else { return }
         canvas.load(image: state.image, annotations: state.annotations)
         historyID = id
     }

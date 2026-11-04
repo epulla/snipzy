@@ -1008,7 +1008,7 @@ struct EditorTests {
         #expect(panel.isHidden)
         controller.toggleHistoryPanel()
         #expect(defaults.bool(forKey: EditorWindowController.historyPanelKey))
-        func rows() -> [NSButton] { buttons(in: panel.documentView) }
+        func rows() -> [NSButton] { buttons(in: panel.documentView).filter { !($0 is GhostButton) } }
         func arrow(_ title: String) throws -> NSButton { try #require(buttons(in: controller.window?.contentView).first { $0 is GhostButton && $0.title == title }) }
         #expect(!panel.isHidden)
         #expect(rows().map { $0.identifier?.rawValue } == ids)
@@ -1055,6 +1055,43 @@ struct EditorTests {
         }
         #expect(contentView.hitTest(CGPoint(x: canvas.frame.midX, y: canvas.frame.midY)) === canvas)
         #expect(canvas.renderedPNGData() == baseline)
+    }
+
+    @Test
+    func trashDeletesEntryAndMovesCurrentToOlderElseNewerElseDetaches() throws {
+        let (session, ids, directory) = try historySession(count: 4)
+        let suite = "SnipzyPanel-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session, defaults: defaults)
+        controller.historyID = ids[1]
+        AppDelegate.trackHistory(controller, in: session.history)
+        controller.toggleHistoryPanel()
+        let panel = try #require(controller.historyPanel)
+        func trash(_ id: String) throws -> NSButton {
+            try #require(buttons(in: panel.documentView).first { $0 is GhostButton && $0.identifier?.rawValue == id })
+        }
+        try canvas(of: controller).addText("note", at: CGPoint(x: 0.5, y: 0.5))
+        try canvas(of: controller).commandHandler?(.copy)
+
+        try trash(ids[1]).performClick(nil)
+        #expect(controller.historyID == ids[2])
+        #expect(session.state(for: ids[1]) == nil)
+
+        try trash(ids[3]).performClick(nil)
+        #expect(controller.historyID == ids[2])
+        #expect(session.history.entries().map(\.id) == [ids[0], ids[2]])
+
+        try trash(ids[2]).performClick(nil)
+        #expect(controller.historyID == ids[0])
+
+        try trash(ids[0]).performClick(nil)
+        #expect(session.history.entries().isEmpty)
+        #expect(controller.historyID == nil)
+        #expect(try canvas(of: controller).image.size.width > 0)
     }
 
     @Test

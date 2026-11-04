@@ -68,7 +68,24 @@ struct CaptureHistoryTests {
         #expect((try FileManager.default.contentsOfDirectory(atPath: directory.path)).count == 1)
     }
 
-    @Test func clearEmptiesDirectory() throws {
+    @Test func removeDeletesOnlyThatEntry() throws {
+        let (history, directory, defaults, suite) = try setup()
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let keep = try #require(history.add(Data([1]), date: date))
+        let gone = try #require(history.add(Data([2]), date: date.addingTimeInterval(1)))
+        let url = try #require(history.entries().first { $0.id == gone }).url
+
+        history.remove(id: gone)
+
+        #expect(history.entries().map(\.id) == [keep])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+    }
+
+        @Test func clearEmptiesDirectory() throws {
         let (history, directory, defaults, suite) = try setup()
         defer {
             defaults.removePersistentDomain(forName: suite)

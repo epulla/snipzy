@@ -89,6 +89,12 @@ final class CaptureHistory {
         notify(id: id)
     }
 
+    func remove(id: String) {
+        guard let entry = entries().first(where: { $0.id == id }) else { return }
+        try? FileManager.default.removeItem(at: entry.url)
+        notify()
+    }
+
     func clear() {
         for entry in entries() { try? FileManager.default.removeItem(at: entry.url) }
         notify()
@@ -123,6 +129,11 @@ final class HistorySession {
         let ids = Set(history.entries().map(\.id))
         states = states.filter { ids.contains($0.key) }
         states[id] = annotations.isEmpty ? nil : (image, annotations)
+    }
+
+    func remove(_ id: String) {
+        states[id] = nil
+        history.remove(id: id)
     }
 
     /// Session state if the entry was annotated this run, else the history PNG with no annotations.

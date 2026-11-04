@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 - **Auto-copy (optional).** Turn on "Copy image to clipboard after each edit" in Settings (`Cmd-,`) to keep the clipboard up to date while you annotate.
 - **Launch at login.** On by default; turn it off in Settings.
 - **Recent captures.** Reopen your last captures from the menu bar **Recent** menu. Snipzy keeps the last 10 by default (change it in Settings) in `~/Library/Application Support/Snipzy/History/`, including your annotations after you copy or save.
-- **History panel.** Click the clock button in the editor toolbar to show recent captures on the right; click one, use the ▲/▼ arrows floating at the top and bottom of the image, or press `↑`/`↓`, to switch the same window to a newer or older capture. Drawings stay editable until you quit Snipzy; after that, history keeps the flattened image.
+- **History panel.** Click the clock button in the editor toolbar to show recent captures on the right; click one, use the ▲/▼ arrows floating at the top and bottom of the image, or press `↑`/`↓`, to switch the same window to a newer or older capture. Click an item's trash icon to delete it from history. Drawings stay editable until you quit Snipzy; after that, history keeps the flattened image.
 
 ## Shortcuts
 
