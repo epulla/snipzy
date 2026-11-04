@@ -189,20 +189,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func showEditor(_ controller: EditorWindowController) {
-        if !controller.isDrawMode { Self.staleEditors(editors).forEach { $0.close() } }
+        let stale = controller.isDrawMode ? [] : Self.staleEditors(editors)
         Self.trackHistory(controller, in: history)
         controller.onClose = { [weak self, weak controller] closedController in
             guard let controller else { return }
             self?.editors.removeAll { $0 === controller && $0 === closedController }
             if self?.editors.isEmpty == true { NSApp.setActivationPolicy(.accessory) }
         }
+        // Append before closing stale editors so the app never drops to .accessory in between.
         editors.append(controller)
+        stale.forEach { $0.close() }
         NSApp.setActivationPolicy(.regular)
         controller.showWindow(self)
-        // Ignore frontmost app so AppKit enables tooltips and cursor rects.
+        // macOS 14+ may ignore activation for an accessory app; orderFrontRegardless keeps the editor on top anyway.
         DispatchQueue.main.async { [weak controller] in
-            NSApp.activate(ignoringOtherApps: true)
-            controller?.window?.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            controller?.window?.orderFrontRegardless()
+            controller?.window?.makeKey()
         }
     }
 
