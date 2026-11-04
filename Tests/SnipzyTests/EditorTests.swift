@@ -1077,6 +1077,17 @@ struct EditorTests {
         try canvas(of: controller).addText("note", at: CGPoint(x: 0.5, y: 0.5))
         try canvas(of: controller).commandHandler?(.copy)
 
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let trashes = try ids.map(trash)
+        #expect(Set(trashes.map { $0.convert($0.bounds, to: panel).maxX }).count == 1)
+        for trash in trashes {
+            let row = try #require(trash.superview)
+            let top = row.isFlipped ? trash.frame.minY : row.bounds.maxY - trash.frame.maxY
+            #expect(top == 6)
+            #expect(row.bounds.maxX - trash.frame.maxX == 6)
+        }
+
         try trash(ids[1]).performClick(nil)
         #expect(controller.historyID == ids[2])
         #expect(session.state(for: ids[1]) == nil)

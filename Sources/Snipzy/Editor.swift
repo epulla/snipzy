@@ -94,6 +94,11 @@ class HoverButton: NSButton {
 /// Round button floating over the canvas: faint until hovered so it never hides the screenshot.
 final class GhostButton: HoverButton {
     static let idleAlpha: CGFloat = 0.3
+    /// False when a parent view (e.g. `HistoryRow`) drives the hover state.
+    var tracksOwnHover = true
+
+    // Layout uses the drawn circle; NSButton's default insets shift it off the constraint values.
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
     convenience init(title: String, symbol: String, diameter: CGFloat, target: AnyObject, action: Selector) {
         self.init(title: title, target: target, action: action)
@@ -115,12 +120,28 @@ final class GhostButton: HoverButton {
 
     override func updateTrackingAreas() {
         trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        if tracksOwnHover {
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        }
         super.updateTrackingAreas()
     }
 
     override func mouseEntered(with event: NSEvent) { alphaValue = 1 }
     override func mouseExited(with event: NSEvent) { alphaValue = Self.idleAlpha }
+}
+
+/// History panel item; hovering anywhere on it brings its ghost trash button to full opacity.
+final class HistoryRow: HoverButton {
+    weak var ghost: GhostButton?
+
+    override func updateTrackingAreas() {
+        trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) { ghost?.alphaValue = 1 }
+    override func mouseExited(with event: NSEvent) { ghost?.alphaValue = GhostButton.idleAlpha }
 }
 
 final class ColorDot: NSView {
@@ -1175,7 +1196,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         guard let historyPanel, !historyPanel.isHidden else { return }
         historyList.arrangedSubviews.forEach { $0.removeFromSuperview() }
         for entry in entries {
-            let row = HoverButton(title: entry.title, target: self, action: #selector(selectHistoryEntry(_:)))
+            let row = HistoryRow(title: entry.title, target: self, action: #selector(selectHistoryEntry(_:)))
             row.identifier = NSUserInterfaceItemIdentifier(entry.id)
             row.image = entry.thumbnail(fitting: Self.thumbnailSize)
             row.imagePosition = .imageAbove
@@ -1191,9 +1212,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             // A subview button gets its own clicks, so deleting never also selects the row.
             let trash = GhostButton(title: "Delete capture", symbol: "trash", diameter: 22, target: self, action: #selector(deleteHistoryEntry(_:)))
             trash.identifier = row.identifier
+            trash.tracksOwnHover = false
+            row.ghost = trash
             row.addSubview(trash)
-            trash.topAnchor.constraint(equalTo: row.topAnchor, constant: 4).isActive = true
-            trash.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -4).isActive = true
+            // Fixed slot inset, not the image's corner, so every row's trash lines up whatever the thumbnail's aspect ratio.
+            trash.topAnchor.constraint(equalTo: row.topAnchor, constant: 6).isActive = true
+            trash.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -6).isActive = true
         }
     }
 
