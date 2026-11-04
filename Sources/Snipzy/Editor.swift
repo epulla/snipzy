@@ -745,6 +745,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     var onClose: ((EditorWindowController) -> Void)?
     let isDrawMode: Bool
     var onOpenInEditor: ((NSImage, [Annotation]) -> Void)?
+    /// Called with the rendered PNG on copy, save and auto-copy so history keeps the annotated version.
+    var onRendered: ((Data) -> Void)?
+    var historyID: String?
+    var hasAnnotations: Bool { !canvas.annotations.isEmpty }
 
     init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), drawOn frame: CGRect? = nil, autoCopy: @escaping () -> Bool = { UserDefaults.standard.bool(forKey: SettingsWindowController.autoCopyKey) }, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
         let alert = NSAlert()
@@ -1120,6 +1124,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             showError(AppError.imageEncodingFailed)
             return
         }
+        onRendered?(png)
         guard pasteboard.write(pngData: png, tiffData: tiff) else {
             showError(AppError.clipboardWriteFailed)
             return
@@ -1129,6 +1134,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     // Auto-copy is silent, so failures are ignored rather than interrupting editing.
     private func writeImageToPasteboard() {
         guard let png = canvas.renderedPNGData(), let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation else { return }
+        onRendered?(png)
         pasteboard.write(pngData: png, tiffData: tiff)
     }
 
@@ -1140,6 +1146,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private func save() -> Bool {
         finishText(commit: true)
         guard let png = canvas.renderedPNGData() else { return false }
+        onRendered?(png)
         let panel = NSSavePanel()
         panel.nameFieldStringValue = Self.defaultFileName()
         panel.allowedContentTypes = [.png]

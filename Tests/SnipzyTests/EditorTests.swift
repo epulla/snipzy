@@ -178,12 +178,15 @@ struct EditorTests {
         let pasteboard = RecordingPasteboard()
         let controller = EditorWindowController(image: testImage(), pasteboard: pasteboard)
         let canvas = try canvas(of: controller)
+        var rendered: Data?
+        controller.onRendered = { rendered = $0 }
 
         canvas.commandHandler?(.copy)
 
         #expect(pasteboard.writeCount == 1)
         #expect(!pasteboard.pngData.isEmpty)
         #expect(!pasteboard.tiffData.isEmpty)
+        #expect(rendered == pasteboard.pngData)
     }
 
     @Test

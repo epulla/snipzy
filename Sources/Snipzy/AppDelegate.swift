@@ -2,14 +2,16 @@ import AppKit
 import Carbon.HIToolbox
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
+    private var recentItem: NSMenuItem!
     private var hotKeyMonitors: [CarbonHotKeyMonitor] = []
     private var editors: [EditorWindowController] = []
     private var captureInProgress = false
     private let captureService = CaptureService()
     private let pasteboard = SystemPasteboard()
-    private lazy var settings = SettingsWindowController()
+    private let history = CaptureHistory()
+    private lazy var settings = SettingsWindowController(history: history)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMainMenu()
@@ -65,14 +67,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureItem.keyEquivalentModifierMask = [.command, .shift]
         let drawItem = menu.addItem(withTitle: "Draw on Screen", action: #selector(drawOnScreen), keyEquivalent: "6")
         drawItem.keyEquivalentModifierMask = [.command, .shift]
+        recentItem = menu.addItem(withTitle: "Recent", action: nil, keyEquivalent: "")
         let desktopItem = menu.addItem(withTitle: "Open Desktop", action: #selector(openDesktop), keyEquivalent: "")
         let settingsItem = menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
         let quitItem = menu.addItem(withTitle: "Quit Snipzy", action: #selector(quit), keyEquivalent: "q")
-        let symbols = [(captureItem, "viewfinder"), (drawItem, "pencil.tip.crop.circle"), (desktopItem, "menubar.dock.rectangle"), (settingsItem, "gearshape"), (quitItem, "power")]
+        let symbols = [(captureItem, "viewfinder"), (drawItem, "pencil.tip.crop.circle"), (recentItem!, "clock.arrow.circlepath"), (desktopItem, "menubar.dock.rectangle"), (settingsItem, "gearshape"), (quitItem, "power")]
         for (item, symbol) in symbols { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
         menu.items.forEach { $0.target = self }
+        menu.delegate = self
         return menu
+    }
+
+    // No submenu and no action leaves Recent disabled while history is empty.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let entries = history.entries()
+        guard !entries.isEmpty else {
+            recentItem.submenu = nil
+            return
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        formatter.doesRelativeDateFormatting = true
+        let submenu = NSMenu()
+        for entry in entries {
+            let item = submenu.addItem(withTitle: formatter.string(from: entry.date), action: #selector(openRecent(_:)), keyEquivalent: "")
+            item.representedObject = entry.id
+            item.image = Self.thumbnail(at: entry.url)
+        }
+        submenu.addItem(.separator())
+        submenu.addItem(withTitle: "Clear History", action: #selector(clearHistory), keyEquivalent: "")
+        submenu.items.forEach { $0.target = self }
+        recentItem.submenu = submenu
+    }
+
+    private static func thumbnail(at url: URL) -> NSImage? {
+        guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else { return nil }
+        let scale = min(64 / image.size.width, 40 / image.size.height, 1)
+        image.size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+        return image
+    }
+
+    @objc private func openRecent(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String,
+              let entry = history.entries().first(where: { $0.id == id }),
+              let image = NSImage(contentsOf: entry.url) else { return }
+        let controller = EditorWindowController(image: image, pasteboard: pasteboard)
+        controller.historyID = id
+        showEditor(controller)
+    }
+
+    @objc private func clearHistory() {
+        history.clear()
     }
 
     @objc private func capture() {
@@ -97,9 +144,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             let overlay = EditorWindowController(image: snapshot.image, pasteboard: pasteboard, drawOn: snapshot.frame)
-            overlay.onOpenInEditor = { [weak self] image, annotations in
+            overlay.onOpenInEditor = { [weak self, weak overlay] image, annotations in
                 guard let self else { return }
-                showEditor(EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard))
+                let editor = EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard)
+                editor.historyID = overlay?.historyID
+                showEditor(editor)
             }
             showEditor(overlay)
         }
@@ -113,14 +162,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 showError(AppError.clipboardWriteFailed)
                 return
             }
-            showEditor(EditorWindowController(image: captured.image, pasteboard: pasteboard))
+            let editor = EditorWindowController(image: captured.image, pasteboard: pasteboard)
+            editor.historyID = history.add(captured.pngData)
+            showEditor(editor)
         case let .failure(error):
             if let captureError = error as? CaptureError, case .cancelled = captureError { return }
             showError(error)
         }
     }
 
+    /// Editors a new capture replaces: unannotated editor windows; draw mode and annotated ones stay.
+    static func staleEditors(_ editors: [EditorWindowController]) -> [EditorWindowController] {
+        editors.filter { !$0.isDrawMode && !$0.hasAnnotations }
+    }
+
     private func showEditor(_ controller: EditorWindowController) {
+        if !controller.isDrawMode { Self.staleEditors(editors).forEach { $0.close() } }
+        controller.onRendered = { [weak self, weak controller] png in
+            guard let self, let controller else { return }
+            if let id = controller.historyID {
+                history.replace(id: id, with: png)
+            } else {
+                controller.historyID = history.add(png)
+            }
+        }
         controller.onClose = { [weak self, weak controller] closedController in
             guard let controller else { return }
             self?.editors.removeAll { $0 === controller && $0 === closedController }

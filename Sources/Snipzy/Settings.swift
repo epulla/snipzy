@@ -13,11 +13,15 @@ final class SettingsWindowController: NSWindowController {
         try? register()
     }
     private let defaults: UserDefaults
+    private let history: CaptureHistory
     let loginCheckbox = NSButton(checkboxWithTitle: "Launch at login", target: nil, action: nil)
     let autoCopyCheckbox = NSButton(checkboxWithTitle: "Copy image to clipboard after each edit", target: nil, action: nil)
+    let historyLimitField = NSTextField()
+    let historyLimitStepper = NSStepper()
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, history: CaptureHistory) {
         self.defaults = defaults
+        self.history = history
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 90), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Snipzy Settings"
         window.isReleasedWhenClosed = false
@@ -33,11 +37,28 @@ final class SettingsWindowController: NSWindowController {
         note.font = .systemFont(ofSize: 11)
         note.textColor = .secondaryLabelColor
         note.preferredMaxLayoutWidth = 340
-        let stack = NSStackView(views: [loginCheckbox, autoCopyCheckbox, note])
+        let formatter = NumberFormatter()
+        formatter.minimum = NSNumber(value: CaptureHistory.limitRange.lowerBound)
+        formatter.maximum = NSNumber(value: CaptureHistory.limitRange.upperBound)
+        formatter.allowsFloats = false
+        historyLimitField.formatter = formatter
+        historyLimitField.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        historyLimitField.target = self
+        historyLimitField.action = #selector(changeHistoryLimit(_:))
+        historyLimitStepper.minValue = Double(CaptureHistory.limitRange.lowerBound)
+        historyLimitStepper.maxValue = Double(CaptureHistory.limitRange.upperBound)
+        historyLimitStepper.target = self
+        historyLimitStepper.action = #selector(changeHistoryLimit(_:))
+        historyLimitField.integerValue = history.limit
+        historyLimitStepper.integerValue = history.limit
+        let historyRow = NSStackView(views: [NSTextField(labelWithString: "Keep last"), historyLimitField, historyLimitStepper, NSTextField(labelWithString: "captures in Recent")])
+        historyRow.spacing = 6
+        let stack = NSStackView(views: [loginCheckbox, autoCopyCheckbox, note, historyRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
         stack.setCustomSpacing(12, after: loginCheckbox)
+        stack.setCustomSpacing(12, after: note)
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
         window.contentView = stack
         window.setContentSize(stack.fittingSize)
@@ -67,5 +88,11 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func toggleAutoCopy(_ sender: NSButton) {
         defaults.set(sender.state == .on, forKey: Self.autoCopyKey)
+    }
+
+    @objc private func changeHistoryLimit(_ sender: NSControl) {
+        history.setLimit(sender.integerValue)
+        historyLimitField.integerValue = history.limit
+        historyLimitStepper.integerValue = history.limit
     }
 }
