@@ -94,6 +94,8 @@ class HoverButton: NSButton {
 /// Round button floating over the canvas: faint until hovered so it never hides the screenshot.
 final class GhostButton: HoverButton {
     static let idleAlpha: CGFloat = 0.3
+    /// Opacity when not hovered; 0 hides it until hover.
+    var restAlpha = GhostButton.idleAlpha { didSet { alphaValue = restAlpha } }
     /// False when a parent view (e.g. `HistoryRow`) drives the hover state.
     var tracksOwnHover = true
 
@@ -109,14 +111,14 @@ final class GhostButton: HoverButton {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
         layer?.cornerRadius = diameter / 2
-        alphaValue = Self.idleAlpha
+        alphaValue = restAlpha
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(equalToConstant: diameter).isActive = true
         heightAnchor.constraint(equalToConstant: diameter).isActive = true
     }
 
     // Hidden while hovered gets no mouseExited; reappear faint.
-    override var isHidden: Bool { didSet { if isHidden { alphaValue = Self.idleAlpha } } }
+    override var isHidden: Bool { didSet { if isHidden { alphaValue = restAlpha } } }
 
     override func updateTrackingAreas() {
         trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)
@@ -127,7 +129,7 @@ final class GhostButton: HoverButton {
     }
 
     override func mouseEntered(with event: NSEvent) { alphaValue = 1 }
-    override func mouseExited(with event: NSEvent) { alphaValue = Self.idleAlpha }
+    override func mouseExited(with event: NSEvent) { alphaValue = restAlpha }
 }
 
 /// History panel item; hovering anywhere on it brings its ghost trash button to full opacity.
@@ -141,7 +143,7 @@ final class HistoryRow: HoverButton {
     }
 
     override func mouseEntered(with event: NSEvent) { ghost?.alphaValue = 1 }
-    override func mouseExited(with event: NSEvent) { ghost?.alphaValue = GhostButton.idleAlpha }
+    override func mouseExited(with event: NSEvent) { ghost?.alphaValue = ghost?.restAlpha ?? 0 }
 }
 
 final class ColorDot: NSView {
@@ -1213,6 +1215,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             let trash = GhostButton(title: "Delete capture", symbol: "trash", diameter: 22, target: self, action: #selector(deleteHistoryEntry(_:)))
             trash.identifier = row.identifier
             trash.tracksOwnHover = false
+            trash.restAlpha = 0
             row.ghost = trash
             row.addSubview(trash)
             // Fixed slot inset, not the image's corner, so every row's trash lines up whatever the thumbnail's aspect ratio.
@@ -1225,12 +1228,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     @objc private func deleteHistoryEntry(_ sender: NSButton) {
         guard let session, let id = sender.identifier?.rawValue else { return }
         let entries = session.history.entries()
-        guard id == historyID, let index = entries.firstIndex(where: { $0.id == id }) else {
-            session.remove(id)
+        do {
+            try session.remove(id)
+        } catch {
+            showError(error)
             return
         }
+        guard id == historyID, let index = entries.firstIndex(where: { $0.id == id }) else { return }
         let next = entries.indices.contains(index + 1) ? entries[index + 1] : entries.indices.contains(index - 1) ? entries[index - 1] : nil
-        session.remove(id)
         guard let next else {
             historyID = nil
             return

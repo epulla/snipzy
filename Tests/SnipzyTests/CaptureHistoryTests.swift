@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import Snipzy
 
@@ -79,13 +79,32 @@ struct CaptureHistoryTests {
         let gone = try #require(history.add(Data([2]), date: date.addingTimeInterval(1)))
         let url = try #require(history.entries().first { $0.id == gone }).url
 
-        history.remove(id: gone)
+        try history.remove(id: gone)
 
         #expect(history.entries().map(\.id) == [keep])
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
 
-        @Test func clearEmptiesDirectory() throws {
+        @Test func failedRemoveThrowsAndKeepsSessionState() throws {
+        let (history, directory, defaults, suite) = try setup()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let id = try #require(history.add(Data([1])))
+        let session = HistorySession(history: history)
+        let canvas = EditorCanvas(image: NSImage(size: NSSize(width: 10, height: 10)))
+        canvas.addText("keep", at: CGPoint(x: 0.5, y: 0.5))
+        session.store(id, image: canvas.image, annotations: canvas.annotations)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+
+        #expect(throws: (any Error).self) { try session.remove(id) }
+        #expect(history.entries().map(\.id) == [id])
+        #expect(session.state(for: id)?.annotations.map(\.text) == ["keep"])
+    }
+
+    @Test func clearEmptiesDirectory() throws {
         let (history, directory, defaults, suite) = try setup()
         defer {
             defaults.removePersistentDomain(forName: suite)

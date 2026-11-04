@@ -89,9 +89,9 @@ final class CaptureHistory {
         notify(id: id)
     }
 
-    func remove(id: String) {
+    func remove(id: String) throws {
         guard let entry = entries().first(where: { $0.id == id }) else { return }
-        try? FileManager.default.removeItem(at: entry.url)
+        try FileManager.default.removeItem(at: entry.url)
         notify()
     }
 
@@ -131,9 +131,10 @@ final class HistorySession {
         states[id] = annotations.isEmpty ? nil : (image, annotations)
     }
 
-    func remove(_ id: String) {
+    /// Keeps the editable state if the file could not be deleted.
+    func remove(_ id: String) throws {
+        try history.remove(id: id)
         states[id] = nil
-        history.remove(id: id)
     }
 
     /// Session state if the entry was annotated this run, else the history PNG with no annotations.

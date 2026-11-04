@@ -1080,6 +1080,7 @@ struct EditorTests {
         controller.window?.setContentSize(NSSize(width: 900, height: 650))
         controller.window?.contentView?.layoutSubtreeIfNeeded()
         let trashes = try ids.map(trash)
+        #expect(trashes.allSatisfy { $0.alphaValue == 0 })
         #expect(Set(trashes.map { $0.convert($0.bounds, to: panel).maxX }).count == 1)
         for trash in trashes {
             let row = try #require(trash.superview)
