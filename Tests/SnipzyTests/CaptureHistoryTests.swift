@@ -13,8 +13,11 @@ struct CaptureHistoryTests {
     }
 
     @Test func addListsNewestFirst() throws {
-        let (history, _, defaults, suite) = try setup()
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let (history, directory, defaults, suite) = try setup()
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
         let old = Date(timeIntervalSince1970: 1_700_000_000)
         let first = try #require(history.add(Data([1]), date: old))
         let second = try #require(history.add(Data([2]), date: old.addingTimeInterval(1)))
@@ -22,8 +25,11 @@ struct CaptureHistoryTests {
     }
 
     @Test func addPrunesOldestBeyondLimit() throws {
-        let (history, _, defaults, suite) = try setup()
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let (history, directory, defaults, suite) = try setup()
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
         history.setLimit(2)
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         let old = try #require(history.add(Data([1]), date: date))
@@ -34,8 +40,11 @@ struct CaptureHistoryTests {
     }
 
     @Test func replaceKeepsPositionAndDate() throws {
-        let (history, _, defaults, suite) = try setup()
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let (history, directory, defaults, suite) = try setup()
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         let id = try #require(history.add(Data([1]), date: date))
         let before = try #require(history.entries().first)
@@ -46,7 +55,10 @@ struct CaptureHistoryTests {
 
     @Test func setLimitPersistsAndShrinks() throws {
         let (history, directory, defaults, suite) = try setup()
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
         let date = Date(timeIntervalSince1970: 1_700_000_000)
         for offset in 0..<3 { _ = history.add(Data([UInt8(offset)]), date: date.addingTimeInterval(Double(offset))) }
         history.setLimit(1)
@@ -58,7 +70,10 @@ struct CaptureHistoryTests {
 
     @Test func clearEmptiesDirectory() throws {
         let (history, directory, defaults, suite) = try setup()
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
         _ = history.add(Data([1]))
         history.clear()
         #expect(history.entries().isEmpty)

@@ -214,6 +214,62 @@ struct EditorTests {
     }
 
     @Test
+    func typedTextWithoutReturnKeepsEditorFromClosingAsStale() throws {
+        let controller = EditorWindowController(image: testImage())
+        let canvas = try canvas(of: controller)
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        canvas.setTool(.text)
+        let window = try #require(controller.window)
+        let location = canvas.convert(canvas.viewPoint(for: CGPoint(x: 0.2, y: 0.2)), to: nil)
+        let event = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: location, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        canvas.mouseDown(with: event)
+        let field = try #require(canvas.subviews.compactMap { $0 as? NSTextField }.first)
+        #expect(AppDelegate.staleEditors([controller]) == [controller])
+
+        field.stringValue = "hi"
+
+        #expect(AppDelegate.staleEditors([controller]).isEmpty)
+    }
+
+    @Test
+    func copyReplacesTrackedHistoryEntryWithoutDuplicate() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let history = CaptureHistory(directory: directory)
+        let original = try #require(EditorCanvas(image: testImage()).renderedPNGData())
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard())
+        controller.historyID = history.add(original)
+        AppDelegate.trackHistory(controller, in: history)
+        let canvas = try canvas(of: controller)
+        canvas.addText("note", at: CGPoint(x: 0.5, y: 0.5))
+
+        canvas.commandHandler?(.copy)
+
+        let entries = history.entries()
+        #expect(entries.count == 1)
+        #expect(entries.first?.id == controller.historyID)
+        #expect(try Data(contentsOf: try #require(entries.first).url) != original)
+    }
+
+    @Test
+    func drawModeEnterAddsOneHistoryEntryPassedToEditor() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let history = CaptureHistory(directory: directory)
+        let draw = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
+        AppDelegate.trackHistory(draw, in: history)
+        var passedID: String?
+        draw.onOpenInEditor = { _, _, id in passedID = id }
+        draw.showWindow(nil)
+        try canvas(of: draw).addText("note", at: CGPoint(x: 0.5, y: 0.5))
+
+        try press(keyCode: 36, characters: "\r", in: draw)
+
+        #expect(history.entries().map(\.id) == [try #require(passedID)])
+    }
+
+    @Test
     func canvasCopySelectorUsesInjectedClipboardWriter() throws {
         let pasteboard = RecordingPasteboard()
         let controller = EditorWindowController(image: testImage(), pasteboard: pasteboard)
@@ -736,7 +792,7 @@ struct EditorTests {
         let pasteboard = RecordingPasteboard()
         let draw = EditorWindowController(image: testImage(), pasteboard: pasteboard, drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
         var opened: [Annotation]?
-        draw.onOpenInEditor = { _, annotations in opened = annotations }
+        draw.onOpenInEditor = { _, annotations, _ in opened = annotations }
         draw.showWindow(nil)
         try canvas(of: draw).addText("note", at: CGPoint(x: 0.5, y: 0.5))
 
@@ -820,7 +876,7 @@ struct EditorTests {
     func drawModeOpenInEditorButtonMatchesEnter() throws {
         let draw = EditorWindowController(image: testImage(), drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
         var opened = false
-        draw.onOpenInEditor = { _, _ in opened = true }
+        draw.onOpenInEditor = { _, _, _ in opened = true }
         draw.showWindow(nil)
         #expect(!buttons(in: EditorWindowController(image: testImage()).window?.contentView).contains { $0.title == "Open in editor" })
         let open = try #require(buttons(in: draw.window?.contentView).first { $0.title == "Open in editor" })

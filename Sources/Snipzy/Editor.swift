@@ -744,11 +744,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private(set) var tooltip: NSView?
     var onClose: ((EditorWindowController) -> Void)?
     let isDrawMode: Bool
-    var onOpenInEditor: ((NSImage, [Annotation]) -> Void)?
+    var onOpenInEditor: ((NSImage, [Annotation], String?) -> Void)?
     /// Called with the rendered PNG on copy, save and auto-copy so history keeps the annotated version.
     var onRendered: ((Data) -> Void)?
     var historyID: String?
-    var hasAnnotations: Bool { !canvas.annotations.isEmpty }
+    var hasAnnotations: Bool { !canvas.annotations.isEmpty || pendingText?.field.stringValue.isEmpty == false }
 
     init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), drawOn frame: CGRect? = nil, autoCopy: @escaping () -> Bool = { UserDefaults.standard.bool(forKey: SettingsWindowController.autoCopyKey) }, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
         let alert = NSAlert()
@@ -1164,7 +1164,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     @objc private func openInEditor() {
         guard isDrawMode else { return }
         copyImage()
-        onOpenInEditor?(canvas.image, canvas.annotations)
+        onOpenInEditor?(canvas.image, canvas.annotations, historyID)
         window?.close()
     }
 

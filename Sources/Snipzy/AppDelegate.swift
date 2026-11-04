@@ -144,10 +144,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
             let overlay = EditorWindowController(image: snapshot.image, pasteboard: pasteboard, drawOn: snapshot.frame)
-            overlay.onOpenInEditor = { [weak self, weak overlay] image, annotations in
+            overlay.onOpenInEditor = { [weak self] image, annotations, historyID in
                 guard let self else { return }
                 let editor = EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard)
-                editor.historyID = overlay?.historyID
+                editor.historyID = historyID
                 showEditor(editor)
             }
             showEditor(overlay)
@@ -176,16 +176,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         editors.filter { !$0.isDrawMode && !$0.hasAnnotations }
     }
 
-    private func showEditor(_ controller: EditorWindowController) {
-        if !controller.isDrawMode { Self.staleEditors(editors).forEach { $0.close() } }
-        controller.onRendered = { [weak self, weak controller] png in
-            guard let self, let controller else { return }
+    /// Keeps the editor's history entry in sync with its latest rendered PNG; adds one on first render if needed.
+    static func trackHistory(_ controller: EditorWindowController, in history: CaptureHistory) {
+        controller.onRendered = { [weak controller] png in
+            guard let controller else { return }
             if let id = controller.historyID {
                 history.replace(id: id, with: png)
             } else {
                 controller.historyID = history.add(png)
             }
         }
+    }
+
+    private func showEditor(_ controller: EditorWindowController) {
+        if !controller.isDrawMode { Self.staleEditors(editors).forEach { $0.close() } }
+        Self.trackHistory(controller, in: history)
         controller.onClose = { [weak self, weak controller] closedController in
             guard let controller else { return }
             self?.editors.removeAll { $0 === controller && $0 === closedController }
