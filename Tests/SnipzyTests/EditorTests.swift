@@ -915,6 +915,131 @@ struct EditorTests {
         #expect(pasteboard.writeCount == 0)
     }
 
+    @Test
+    func loadSwapsImageAndResetsEditState() {
+        let canvas = EditorCanvas(image: testImage())
+        canvas.addText("old", at: CGPoint(x: 0.5, y: 0.5))
+        let other = testImage()
+
+        canvas.load(image: other, annotations: [])
+
+        #expect(canvas.image === other)
+        #expect(canvas.annotations.isEmpty)
+        #expect(!canvas.isModified)
+        canvas.undo()
+        #expect(canvas.annotations.isEmpty)
+    }
+
+    @Test
+    func switchingEntriesKeepsAnnotationsEditableAndRendersHistory() throws {
+        let (session, ids, directory) = try historySession(count: 2)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
+        controller.historyID = ids[0]
+        AppDelegate.trackHistory(controller, in: session.history)
+        let canvas = try canvas(of: controller)
+        let url = try #require(session.history.entries().first { $0.id == ids[0] }).url
+        let original = try Data(contentsOf: url)
+        canvas.addText("note", at: CGPoint(x: 0.5, y: 0.5))
+
+        controller.showEntry(ids[1])
+        #expect(canvas.annotations.isEmpty)
+        #expect(try Data(contentsOf: url) != original)
+
+        controller.showEntry(ids[0])
+        #expect(canvas.annotations.map(\.text) == ["note"])
+        canvas.updateText(at: 0, text: "edited")
+        #expect(canvas.annotations.map(\.text) == ["edited"])
+    }
+
+    @Test
+    func arrowKeysStepThroughHistoryAndClampAtEnds() throws {
+        let (session, ids, directory) = try historySession(count: 3)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
+        controller.historyID = ids[0]
+
+        try press(keyCode: 123, characters: "\u{F702}", in: controller)
+        #expect(controller.historyID == ids[1])
+        try press(keyCode: 33, characters: "[", modifiers: .command, in: controller)
+        #expect(controller.historyID == ids[2])
+        try press(keyCode: 123, characters: "\u{F702}", in: controller)
+        #expect(controller.historyID == ids[2])
+        try press(keyCode: 124, characters: "\u{F703}", in: controller)
+        try press(keyCode: 30, characters: "]", modifiers: .command, in: controller)
+        #expect(controller.historyID == ids[0])
+        try press(keyCode: 124, characters: "\u{F703}", in: controller)
+        #expect(controller.historyID == ids[0])
+    }
+
+    @Test
+    func arrowKeysIgnoredWhileTyping() throws {
+        let (session, ids, directory) = try historySession(count: 2)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
+        controller.historyID = ids[0]
+        controller.window?.setContentSize(NSSize(width: 900, height: 650))
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        let canvas = try canvas(of: controller)
+        canvas.setTool(.text)
+        try click(canvas, at: CGPoint(x: 0.2, y: 0.2))
+        #expect(!canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
+
+        try press(keyCode: 123, characters: "\u{F702}", in: controller)
+
+        #expect(controller.historyID == ids[0])
+        #expect(!canvas.subviews.compactMap { $0 as? NSTextField }.isEmpty)
+    }
+
+    @Test
+    func historyPanelListsEntriesAndRefreshesOnNewCapture() throws {
+        let (session, ids, directory) = try historySession(count: 2)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            UserDefaults.standard.removeObject(forKey: EditorWindowController.historyPanelKey)
+        }
+        let controller = EditorWindowController(image: testImage(), pasteboard: RecordingPasteboard(), session: session)
+        controller.historyID = ids[1]
+        controller.toggleHistoryPanel()
+        let panel = try #require(controller.historyPanel)
+        func rows() -> [NSButton] { buttons(in: panel.documentView) }
+        #expect(!panel.isHidden)
+        #expect(rows().map { $0.identifier?.rawValue } == ids)
+        #expect(rows().map { $0.accessibilityValue() as? String } == [nil, "Current"])
+
+        let png = try #require(EditorCanvas(image: testImage()).renderedPNGData())
+        let newID = try #require(session.history.add(png))
+        #expect(rows().first?.identifier?.rawValue == newID)
+
+        rows()[1].performClick(nil)
+        #expect(controller.historyID == ids[0])
+
+        controller.toggleHistoryPanel()
+        #expect(panel.isHidden)
+    }
+
+    @Test
+    func historyControlsOnlyWithSession() throws {
+        let (session, _, directory) = try historySession(count: 1)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let plain = EditorWindowController(image: testImage())
+        let draw = EditorWindowController(image: testImage(), session: session, drawOn: CGRect(x: 0, y: 0, width: 100, height: 100))
+
+        #expect(plain.historyPanel == nil)
+        #expect(draw.historyPanel == nil)
+        #expect(!buttons(in: plain.window?.contentView).contains { $0.accessibilityHelp() == "History" })
+    }
+
+    /// Entries newest first, matching `CaptureHistory.entries()` order.
+    private func historySession(count: Int) throws -> (HistorySession, [String], URL) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let history = CaptureHistory(directory: directory)
+        let png = try #require(EditorCanvas(image: testImage()).renderedPNGData())
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let ids = try (0..<count).map { try #require(history.add(png, date: date.addingTimeInterval(Double($0)))) }
+        return (HistorySession(history: history), ids.reversed(), directory)
+    }
+
     private func buttons(in view: NSView?) -> [NSButton] {
         guard let view else { return [] }
         return ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap { buttons(in: $0) }

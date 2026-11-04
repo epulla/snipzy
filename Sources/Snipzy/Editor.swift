@@ -113,8 +113,8 @@ final class ColorDot: NSView {
 @MainActor
 final class EditorCanvas: NSView {
     private(set) var annotations: [Annotation] = []
-    let image: NSImage
-    private let bitmap: NSBitmapImageRep?
+    private(set) var image: NSImage
+    private var bitmap: NSBitmapImageRep?
     private(set) var tool: AnnotationTool = .pen
     private(set) var selectedTextIndex: Int?
     private var editingIndex: Int?
@@ -151,6 +151,28 @@ final class EditorCanvas: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override var acceptsFirstResponder: Bool { true }
+
+    /// True once the user changed annotations since init or the last `load`.
+    var isModified: Bool { !undoAnnotations.isEmpty || !redoAnnotations.isEmpty }
+
+    /// Swaps in another capture; edit history and selection start fresh.
+    func load(image: NSImage, annotations: [Annotation]) {
+        self.image = image
+        bitmap = image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))
+        self.annotations = annotations
+        undoAnnotations = []
+        redoAnnotations = []
+        selectedTextIndex = nil
+        editingIndex = nil
+        editOnRelease = false
+        movingIndex = nil
+        dragStart = nil
+        dragCurrent = nil
+        dragPoints = []
+        ocrSelection = nil
+        textSelectionHandler?(nil)
+        needsDisplay = true
+    }
 
     override func updateTrackingAreas() {
         trackingAreas.filter { $0.owner === self }.forEach(removeTrackingArea)
@@ -233,9 +255,15 @@ final class EditorCanvas: NSView {
             commandHandler?(event.modifierFlags.contains(.shift) ? .shiftEnter : .enter)
             return
         }
+        if event.keyCode == 123 || event.keyCode == 124, !event.modifierFlags.contains(.command) {
+            commandHandler?(event.keyCode == 123 ? .previous : .next)
+            return
+        }
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if event.modifierFlags.contains(.command) {
             switch key {
+            case "[": commandHandler?(.previous)
+            case "]": commandHandler?(.next)
             case "z": commandHandler?(event.modifierFlags.contains(.shift) ? .redo : .undo)
             case "c": commandHandler?(.copy)
             case "s": commandHandler?(.save)
@@ -742,15 +770,23 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
     private var tooltipTargets: [ObjectIdentifier: (view: NSView, title: String, shortcut: String?)] = [:]
     private var tooltipTask: Task<Void, Never>?
     private(set) var tooltip: NSView?
+    private let session: HistorySession?
+    private var olderButton: NSButton?
+    private var newerButton: NSButton?
+    private var historyButton: NSButton?
+    private(set) var historyPanel: NSScrollView?
+    private let historyList = NSStackView()
+    private var historyPanelWidth: NSLayoutConstraint?
+    static let historyPanelKey = "historyPanelVisible"
     var onClose: ((EditorWindowController) -> Void)?
     let isDrawMode: Bool
     var onOpenInEditor: ((NSImage, [Annotation], String?) -> Void)?
     /// Called with the rendered PNG on copy, save and auto-copy so history keeps the annotated version.
     var onRendered: ((Data) -> Void)?
-    var historyID: String?
+    var historyID: String? { didSet { refreshHistory() } }
     var hasAnnotations: Bool { !canvas.annotations.isEmpty || pendingText?.field.stringValue.isEmpty == false }
 
-    init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), drawOn frame: CGRect? = nil, autoCopy: @escaping () -> Bool = { UserDefaults.standard.bool(forKey: SettingsWindowController.autoCopyKey) }, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
+    init(image: NSImage, annotations: [Annotation] = [], pasteboard: any ImagePasting = SystemPasteboard(), recognizer: any TextRecognizing = VisionTextRecognizer(), session: HistorySession? = nil, drawOn frame: CGRect? = nil, autoCopy: @escaping () -> Bool = { UserDefaults.standard.bool(forKey: SettingsWindowController.autoCopyKey) }, confirmDiscard: @escaping @MainActor (NSWindow, @escaping (Bool) -> Void) -> Void = { window, completion in
         let alert = NSAlert()
         alert.messageText = "Discard annotated screenshot?"
         let discard = alert.addButton(withTitle: "Discard")
@@ -762,6 +798,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         self.pasteboard = pasteboard
         self.recognizer = recognizer
         self.confirmDiscard = confirmDiscard
+        self.session = frame == nil ? session : nil
         isDrawMode = frame != nil
         let window: NSWindow
         if let frame {
@@ -800,7 +837,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             case .escape: self?.escape()
             case .enter: self?.openInEditor()
             case .shiftEnter: self?.saveAndExit()
+            case .previous: self?.showAdjacentEntry(1)
+            case .next: self?.showAdjacentEntry(-1)
             }
+        }
+        if let history = self.session?.history {
+            NotificationCenter.default.addObserver(self, selector: #selector(historyDidChange(_:)), name: .captureHistoryDidChange, object: history)
+            setHistoryPanelVisible(UserDefaults.standard.bool(forKey: Self.historyPanelKey))
         }
     }
 
@@ -941,6 +984,28 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
         toolbar.addArrangedSubview(textSizeStepper)
         let spacer = NSView()
         toolbar.addArrangedSubview(spacer)
+        if session != nil {
+            let navigation: [(String, String, String?, Selector)] = [
+                ("Older capture", "chevron.left", "←", #selector(showOlderEntry)),
+                ("History", "clock.arrow.circlepath", nil, #selector(toggleHistoryPanel)),
+                ("Newer capture", "chevron.right", "→", #selector(showNewerEntry))
+            ]
+            let buttons = navigation.map { title, symbol, shortcut, action in
+                let button = HoverButton(title: title, target: self, action: action)
+                button.bezelStyle = .texturedRounded
+                button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+                button.imagePosition = .imageOnly
+                addTooltip(to: button, title: title, shortcut: shortcut)
+                toolbar.addArrangedSubview(button)
+                return button
+            }
+            buttons[1].setButtonType(.pushOnPushOff)
+            (olderButton, historyButton, newerButton) = (buttons[0], buttons[1], buttons[2])
+            let separator = NSBox()
+            separator.boxType = .separator
+            separator.widthAnchor.constraint(equalToConstant: 1).isActive = true
+            toolbar.addArrangedSubview(separator)
+        }
         var actions: [(String, String, String, Selector)] = [
             ("Undo", "arrow.uturn.backward", "⌘Z", #selector(undo)),
             ("Redo", "arrow.uturn.forward", "⇧⌘Z", #selector(redo)),
@@ -1008,9 +1073,116 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, NSPopo
             toolbar.heightAnchor.constraint(equalToConstant: 48),
             canvas.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
             canvas.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             canvas.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+        guard session != nil else {
+            canvas.trailingAnchor.constraint(equalTo: contentView.trailingAnchor).isActive = true
+            return
+        }
+        let panel = NSScrollView()
+        panel.hasVerticalScroller = true
+        panel.drawsBackground = false
+        panel.translatesAutoresizingMaskIntoConstraints = false
+        historyList.orientation = .vertical
+        historyList.spacing = 8
+        historyList.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        historyList.translatesAutoresizingMaskIntoConstraints = false
+        panel.documentView = historyList
+        contentView.addSubview(panel)
+        let width = panel.widthAnchor.constraint(equalToConstant: 0)
+        historyPanel = panel
+        historyPanelWidth = width
+        NSLayoutConstraint.activate([
+            width,
+            panel.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            panel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            panel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            canvas.trailingAnchor.constraint(equalTo: panel.leadingAnchor),
+            historyList.topAnchor.constraint(equalTo: panel.contentView.topAnchor),
+            historyList.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor),
+            historyList.widthAnchor.constraint(equalTo: panel.contentView.widthAnchor)
+        ])
+    }
+
+    @objc func toggleHistoryPanel() {
+        setHistoryPanelVisible(historyPanel?.isHidden == true)
+    }
+
+    private func setHistoryPanelVisible(_ visible: Bool) {
+        guard let historyPanel else { return }
+        historyPanel.isHidden = !visible
+        historyPanelWidth?.constant = visible ? 180 : 0
+        historyButton?.state = visible ? .on : .off
+        UserDefaults.standard.set(visible, forKey: Self.historyPanelKey)
+        refreshHistory()
+    }
+
+    @objc private func historyDidChange(_ notification: Notification) {
+        if let id = notification.userInfo?["id"] as? String {
+            let row = historyList.arrangedSubviews.first { $0.identifier?.rawValue == id } as? NSButton
+            if let row {
+                row.image = session?.history.entries().first { $0.id == id }?.thumbnail(fitting: Self.thumbnailSize)
+                return
+            }
+        }
+        refreshHistory()
+    }
+
+    private static let thumbnailSize = NSSize(width: 150, height: 90)
+
+    /// Updates arrow states and, when the panel is open, rebuilds its rows.
+    private func refreshHistory() {
+        guard let session else { return }
+        let entries = session.history.entries()
+        let index = historyID.flatMap { id in entries.firstIndex { $0.id == id } }
+        olderButton?.isEnabled = index.map { $0 < entries.count - 1 } ?? false
+        newerButton?.isEnabled = index.map { $0 > 0 } ?? false
+        guard let historyPanel, !historyPanel.isHidden else { return }
+        historyList.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for entry in entries {
+            let row = HoverButton(title: entry.title, target: self, action: #selector(selectHistoryEntry(_:)))
+            row.identifier = NSUserInterfaceItemIdentifier(entry.id)
+            row.image = entry.thumbnail(fitting: Self.thumbnailSize)
+            row.imagePosition = .imageAbove
+            row.imageScaling = .scaleProportionallyDown
+            row.isBordered = false
+            row.wantsLayer = true
+            row.layer?.cornerRadius = 6
+            if entry.id == historyID { row.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.3).cgColor }
+            row.setAccessibilityValue(entry.id == historyID ? "Current" : nil)
+            historyList.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: historyList.widthAnchor, constant: -16).isActive = true
+            row.heightAnchor.constraint(equalToConstant: Self.thumbnailSize.height + 26).isActive = true
+        }
+    }
+
+    @objc private func selectHistoryEntry(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue else { return }
+        showEntry(id)
+    }
+
+    @objc private func showOlderEntry() { showAdjacentEntry(1) }
+    @objc private func showNewerEntry() { showAdjacentEntry(-1) }
+
+    /// Offset +1 is older, -1 newer; ignored while text is being typed.
+    private func showAdjacentEntry(_ offset: Int) {
+        guard pendingText == nil, let session, let id = historyID else { return }
+        let entries = session.history.entries()
+        guard let index = entries.firstIndex(where: { $0.id == id }), entries.indices.contains(index + offset) else { return }
+        showEntry(entries[index + offset].id)
+    }
+
+    /// Swaps this window to another history entry, keeping the current one's annotations in the session and its rendered PNG in history.
+    func showEntry(_ id: String) {
+        guard let session, id != historyID else { return }
+        finishText(commit: true)
+        ocrTask?.cancel()
+        popover?.close()
+        if canvas.isModified, let png = canvas.renderedPNGData() { onRendered?(png) }
+        if let current = historyID { session.store(current, image: canvas.image, annotations: canvas.annotations) }
+        guard let state = session.state(for: id) else { return }
+        canvas.load(image: state.image, annotations: state.annotations)
+        historyID = id
     }
 
     // Custom tooltips: native ones wait ~1.5s and need an active app; activeAlways does not.
@@ -1376,7 +1548,8 @@ final class HelpViewController: NSViewController {
     private static let shortcuts = [
         ("⌘Z", "Undo"), ("⇧⌘Z", "Redo"), ("⌘C", "Copy image"), ("⌘S", "Save PNG"),
         ("⌘W", "Discard"), ("?", "Toggle help"), ("⇧", "Square / circle"), ("⇧⌘4", "New capture"),
-        ("⇧⌘6", "Draw on screen"), ("esc", "Exit draw mode"), ("↩", "Draw: open editor"), ("⇧↩", "Draw: save")
+        ("⇧⌘6", "Draw on screen"), ("esc", "Exit draw mode"), ("↩", "Draw: open editor"), ("⇧↩", "Draw: save"),
+        ("←", "Older capture"), ("→", "Newer capture")
     ]
     private let width: CGFloat = 320
 
@@ -1498,7 +1671,7 @@ private func keycap(_ key: String) -> NSView {
 }
 
 enum EditorCommand {
-    case undo, redo, copy, save, close, help, escape, enter, shiftEnter
+    case undo, redo, copy, save, close, help, escape, enter, shiftEnter, previous, next
 }
 
 /// Draw-mode toolbar container, dragged by its grip or empty background and kept on screen below `topInset`.

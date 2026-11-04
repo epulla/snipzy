@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let captureService = CaptureService()
     private let pasteboard = SystemPasteboard()
     private let history = CaptureHistory()
+    private lazy var session = HistorySession(history: history)
     private lazy var settings = SettingsWindowController(history: history)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -86,15 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             recentItem.submenu = nil
             return
         }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        formatter.doesRelativeDateFormatting = true
         let submenu = NSMenu()
         for entry in entries {
-            let item = submenu.addItem(withTitle: formatter.string(from: entry.date), action: #selector(openRecent(_:)), keyEquivalent: "")
+            let item = submenu.addItem(withTitle: entry.title, action: #selector(openRecent(_:)), keyEquivalent: "")
             item.representedObject = entry.id
-            item.image = Self.thumbnail(at: entry.url)
+            item.image = entry.thumbnail(fitting: NSSize(width: 64, height: 40))
         }
         submenu.addItem(.separator())
         submenu.addItem(withTitle: "Clear History", action: #selector(clearHistory), keyEquivalent: "")
@@ -102,18 +99,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         recentItem.submenu = submenu
     }
 
-    private static func thumbnail(at url: URL) -> NSImage? {
-        guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else { return nil }
-        let scale = min(64 / image.size.width, 40 / image.size.height, 1)
-        image.size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
-        return image
-    }
-
+    // Reuses the newest regular editor so Recent swaps in place like the editor's own history panel.
     @objc private func openRecent(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String,
-              let entry = history.entries().first(where: { $0.id == id }),
-              let image = NSImage(contentsOf: entry.url) else { return }
-        let controller = EditorWindowController(image: image, pasteboard: pasteboard)
+        guard let id = sender.representedObject as? String else { return }
+        if let editor = editors.last(where: { !$0.isDrawMode }) {
+            editor.showEntry(id)
+            bringToFront(editor)
+            return
+        }
+        guard let state = session.state(for: id) else { return }
+        let controller = EditorWindowController(image: state.image, annotations: state.annotations, pasteboard: pasteboard, session: session)
         controller.historyID = id
         showEditor(controller)
     }
@@ -146,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let overlay = EditorWindowController(image: snapshot.image, pasteboard: pasteboard, drawOn: snapshot.frame)
             overlay.onOpenInEditor = { [weak self] image, annotations, historyID in
                 guard let self else { return }
-                let editor = EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard)
+                let editor = EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard, session: session)
                 editor.historyID = historyID
                 showEditor(editor)
             }
@@ -162,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 showError(AppError.clipboardWriteFailed)
                 return
             }
-            let editor = EditorWindowController(image: captured.image, pasteboard: pasteboard)
+            let editor = EditorWindowController(image: captured.image, pasteboard: pasteboard, session: session)
             editor.historyID = history.add(captured.pngData)
             showEditor(editor)
         case let .failure(error):
@@ -199,6 +194,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Append before closing stale editors so the app never drops to .accessory in between.
         editors.append(controller)
         stale.forEach { $0.close() }
+        bringToFront(controller)
+    }
+
+    private func bringToFront(_ controller: EditorWindowController) {
         NSApp.setActivationPolicy(.regular)
         controller.showWindow(self)
         // macOS 14+ may ignore activation for an accessory app; orderFrontRegardless keeps the editor on top anyway.

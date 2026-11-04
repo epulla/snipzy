@@ -28,6 +28,7 @@ https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 - **Auto-copy (optional).** Turn on "Copy image to clipboard after each edit" in Settings (`Cmd-,`) to keep the clipboard up to date while you annotate.
 - **Launch at login.** On by default; turn it off in Settings.
 - **Recent captures.** Reopen your last captures from the menu bar **Recent** menu. Snipzy keeps the last 10 by default (change it in Settings) in `~/Library/Application Support/Snipzy/History/`, including your annotations after you copy or save.
+- **History panel.** Click the clock button in the editor toolbar to show recent captures on the right; click one, or press `←`/`→` (or `Cmd-[`/`Cmd-]`), to switch the same window to an older or newer capture. Drawings stay editable until you quit Snipzy; after that, history keeps the flattened image.
 
 ## Shortcuts
 
@@ -43,6 +44,8 @@ https://github.com/user-attachments/assets/9b0de0cd-086a-4c2d-9d2b-c9600d550014
 | T | Text |
 | B | Pixelate |
 | O | Read Text |
+
+In the editor, `←` / `Cmd-[` shows the older capture and `→` / `Cmd-]` the newer one.
 
 In draw mode, `Enter` opens the drawing in the editor (and copies it), `Shift-Enter` saves it as PNG, and `Esc` exits.
 
@@ -82,7 +85,7 @@ Keyboard > Keyboard Shortcuts > Screenshots` so Snipzy can receive it.
 3. Copy the image or save it as PNG.
 
 A new capture closes editor windows that have no annotations; annotated ones stay
-open. Older captures are in the menu bar **Recent** menu.
+open. Older captures are in the editor's history panel and the menu bar **Recent** menu.
 
 To draw on screen, press `Cmd-Shift-6` and use the same tools. Press `Enter` to
 open the result in the editor, `Shift-Enter` to save it, or `Esc` to exit. Saved
