@@ -102,15 +102,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Reuses the newest regular editor so Recent swaps in place like the editor's own history panel.
     @objc private func openRecent(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        if let editor = editors.last(where: { !$0.isDrawMode }) {
-            editor.showEntry(id)
-            bringToFront(editor)
-            return
-        }
         guard let state = session.state(for: id) else { return }
-        let controller = EditorWindowController(image: state.image, annotations: state.annotations, pasteboard: pasteboard, session: session)
-        controller.historyID = id
-        showEditor(controller)
+        present(id) {
+            let controller = EditorWindowController(image: state.image, annotations: state.annotations, pasteboard: pasteboard, session: session)
+            controller.historyID = id
+            return controller
+        }
     }
 
     @objc private func clearHistory() {
@@ -142,9 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             overlay.onOpenInEditor = { [weak self] image, annotations, historyID in
                 guard let self else { return }
                 if let historyID { session.store(historyID, image: image, annotations: annotations) }
-                let editor = EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard, session: session)
-                editor.historyID = historyID
-                showEditor(editor)
+                present(historyID) {
+                    let editor = EditorWindowController(image: image, annotations: annotations, pasteboard: pasteboard, session: session)
+                    editor.historyID = historyID
+                    return editor
+                }
             }
             showEditor(overlay)
         }
@@ -158,13 +157,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 showError(AppError.clipboardWriteFailed)
                 return
             }
-            let editor = EditorWindowController(image: captured.image, pasteboard: pasteboard, session: session)
-            editor.historyID = history.add(captured.pngData)
-            showEditor(editor)
+            let id = history.add(captured.pngData)
+            present(id) {
+                let editor = EditorWindowController(image: captured.image, pasteboard: pasteboard, session: session)
+                editor.historyID = id
+                return editor
+            }
         case let .failure(error):
             if let captureError = error as? CaptureError, case .cancelled = captureError { return }
             showError(error)
         }
+    }
+
+    /// The single regular editor new content swaps into; draw-mode overlays never count.
+    static func reusableEditor(_ editors: [EditorWindowController]) -> EditorWindowController? {
+        editors.last { !$0.isDrawMode }
+    }
+
+    /// Swaps a history entry into the open editor so captures never pile up windows; opens one only when none can take it.
+    private func present(_ id: String?, orCreate make: () -> EditorWindowController) {
+        if let id, let editor = Self.reusableEditor(editors), session.state(for: id) != nil {
+            editor.showEntry(id)
+            bringToFront(editor)
+            return
+        }
+        showEditor(make())
     }
 
     /// Editors a new capture replaces: unannotated editor windows; draw mode and annotated ones stay.
